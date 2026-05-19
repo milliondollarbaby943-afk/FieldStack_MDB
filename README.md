@@ -1,121 +1,72 @@
-# Firebase SaaS Template
+# FieldStack — AI Foreman for Cabinet & Countertop Subs
 
-A production-ready SaaS starter built on Firebase. Ships with auth, billing, email, rate limiting, structured logging, and a full CI/CD pipeline. Copy it, run the initializer, and start building your product.
+FieldStack is a construction schedule intelligence platform built for cabinet and countertop subcontractors. Upload a GC's PDF schedule, and FieldStack parses it with AI, builds a live workflow, tracks orders, and keeps GC and Sub teams in sync.
 
-## What's included
-
-**Auth**
-- Email/password signup with email verification
-- Google OAuth
-- Custom role claims (`user` / `admin`)
-- Password reset via Resend
-- Account deletion (GDPR/CCPA compliant - cancels Stripe sub, deletes Firestore data)
-
-**Billing**
-- Stripe Checkout for new subscriptions
-- Stripe Customer Portal for upgrades, downgrades, and payment method updates
-- Webhook handler with idempotency and Firestore sync
-- Cancel / reactivate flow with retention UI
-- Invoice history
-- Credit-based usage tracking
-- Plan configs stored in Firestore (no hardcoded prices)
-
-**Infrastructure**
-- Firestore-backed rate limiting (per-user, consistent across function instances)
-- Structured JSON logging compatible with Google Cloud Logging
-- Frontend error reporter with deduplication
-- Input sanitization on all API endpoints
-- CORS enforcement via environment variable
-- Support ticket submission via Resend
-
-**Frontend**
-- React 18 + TypeScript + Vite
-- shadcn/ui (50 components) + Tailwind CSS
-- Dark/light theme
-- Collapsible sidebar with credits bar
-- Settings page (profile, security, preferences)
-- Billing page (plans, invoices, cancel/reactivate)
-- Admin panel (stats, dev tools)
-- Error boundary
-
-**Canonical example feature**
-- Full CRUD for an `Items` resource
-- Real-time Firestore subscription
-- Auth-gated Cloud Function API
-- Demonstrates the full stack pattern to copy for your own features
-
-**DevOps**
-- GitHub Actions CI/CD (develop -> staging, master -> production)
-- Workload Identity Federation (no long-lived service account keys in CI)
-- Firebase Hosting with security headers (CSP, HSTS, X-Frame-Options)
-- Vitest test suite (191 tests)
+**Live:** https://fieldstack-testing-9d632.web.app
 
 ---
 
-## Stack
+## What it does
 
-| | |
+**Schedule Intelligence**
+- Drop a PDF schedule → Claude vision parses every task, date, building, and floor
+- Auto-creates a new project from the upload (no manual setup needed)
+- Detects schedule changes between uploads and notifies the team
+- Generates a 6-step workflow chain per building/floor (Shop Drawings → Submissions → Order Materials → Confirm Delivery → Install → Punch List)
+- Computes order-by dates from lead times so nothing gets ordered late
+
+**Two-User Model: GC + Sub**
+- GC uploads the master schedule and owns the source of truth
+- GC invites sub companies via a signed email link → sub accepts at `/invite/accept`
+- GC assigns tasks to connected subs per row, or in bulk by building/floor/category
+- Sub sees only their assigned tasks in a real-time dashboard
+- Sub updates step status and notes; GC sees live progress
+- Sub can request date changes; GC approves or rejects with inline diff
+
+**AI Foreman**
+- Chat interface for project Q&A, schedule analysis, and draft communications
+- Daily briefing with upcoming orders and schedule alerts
+- GC draft generator for sub-facing schedule update emails
+
+**Integrations (in progress)**
+- Procore & Buildertrend nightly sync
+- Gmail integration for inbound schedule PDFs
+- SMS briefings via Twilio
+
+---
+
+## Tech stack
+
+| Layer | Tech |
 |---|---|
-| Frontend | React 18, TypeScript, Vite |
-| UI | shadcn/ui + Tailwind CSS |
-| Backend | Firebase Cloud Functions (Node 22) |
-| Database | Firestore |
-| Auth | Firebase Auth |
-| Payments | Stripe |
+| Frontend | React 18 + TypeScript + Vite, shadcn/ui, Tailwind CSS |
+| Backend | Firebase Cloud Functions (Node 20, Gen1) |
+| Database | Firestore (multi-tenant: `companies/{id}/projects/{id}/...`) |
+| Auth | Firebase Auth (email/password) |
+| AI | Anthropic Claude (Haiku for parsing, Sonnet for chat) |
 | Email | Resend |
+| Billing | Stripe |
 | Hosting | Firebase Hosting |
-| CI/CD | GitHub Actions |
-| Tests | Vitest |
 
 ---
 
-## Getting started
+## Data model
 
-See [QUICKSTART.md](QUICKSTART.md) for the full setup guide.
-
-The short version:
-
-```bash
-# 1. Initialize the project (replaces all TEMPLATE_APP placeholders)
-npx ts-node scripts/init-project.ts
-
-# 2. Install dependencies
-npm install && npm install --prefix frontend && npm install --prefix functions
-
-# 3. Build and start everything (frontend + functions + Firebase emulators)
-npm run dev
 ```
-
-> **How local dev works:** The Firebase Hosting emulator (port 5002) serves the
-> pre-built `frontend/dist/` folder — it does **not** use the Vite dev server.
-> `npm run dev` builds both the frontend and functions first, then starts all
-> emulators. Re-run it whenever you make code changes, or run
-> `npm run build:frontend` / `npm run build:functions` individually and let the
-> emulators pick up the new files.
-
-| Service | URL |
-|---|---|
-| App (Firebase Hosting) | http://localhost:5002 |
-| Emulator UI | http://localhost:4000 |
-| Functions | http://localhost:5001 |
-| Firestore | http://localhost:8080 |
-| Auth | http://localhost:9099 |
-
-### Hot-reload dev (recommended for active development)
-
-```bash
-npm run dev:hot
+companies/{companyId}/
+  ├── projects/{projectId}/
+  │   ├── tasks/{taskId}           — parsed from schedule PDF
+  │   ├── orderItems/{itemId}      — derived from tasks, tracks PO status
+  │   ├── taskSteps/{stepId}       — 6-step workflow chain per building/floor
+  │   ├── scheduleChanges/{id}     — diff between upload versions
+  │   ├── pendingChanges/{id}      — sub date change requests + GC approval
+  │   ├── feedEntries/{id}         — project activity feed
+  │   └── scheduleUploads/{id}     — upload history
+  ├── projectConnections/{id}      — GC ↔ Sub company links (invite flow)
+  ├── teamMembers/{id}
+  └── leadTimeSettings/{id}
+companyMembers/{companyId}_{uid}   — flat collection for uid lookups
 ```
-
-Runs the Vite dev server (port 5173) alongside the Firebase emulators. You get instant HMR on every save. Access the app at **http://localhost:5173**.
-
-| Service | URL |
-|---|---|
-| App (Vite HMR) | http://localhost:5173 |
-| Emulator UI | http://localhost:4000 |
-| Functions | http://localhost:5001 |
-| Firestore | http://localhost:8080 |
-| Auth | http://localhost:9099 |
 
 ---
 
@@ -124,76 +75,88 @@ Runs the Vite dev server (port 5173) alongside the Firebase emulators. You get i
 ```
 .
 ├── frontend/               React SPA
-│   ├── src/
-│   │   ├── components/     UI components (ui/ = shadcn, rest = app-specific)
-│   │   ├── contexts/       AuthContext, ThemeContext
-│   │   ├── hooks/          useCredits, usePlans, useItems, usePreferences
-│   │   ├── lib/            firebase.ts, api.ts, config.ts, errorReporter.ts
-│   │   └── pages/          ItemsPage, Billing, Settings, Help, SystemAdmin
-│   └── public/             Static assets (replace logo files here)
+│   └── src/
+│       ├── pages/          Dashboard, ProjectDetail, SubDashboardPage,
+│       │                   AcceptInvitePage, MyTasksPage, TeamPage, ...
+│       ├── components/
+│       │   └── fieldstack/tabs/   TimelineTab, WorkflowTab, OrdersTab,
+│       │                          UploadTab, PendingChangesTab, ...
+│       ├── hooks/          useProjectData, useSubTasks, useProjectConnections
+│       └── lib/            fieldstackApi.ts, firebase.ts
 │
-├── functions/              Firebase Cloud Functions
-│   ├── src/
-│   │   ├── index.ts        All Cloud Functions (auth, billing, items API, admin)
-│   │   ├── types.ts        Shared TypeScript types
-│   │   ├── plans.ts        Firestore-backed plan cache
-│   │   ├── seedPlans.ts    Plan seed data
-│   │   ├── emailService.ts Resend wrapper
-│   │   ├── emailTemplates.ts HTML email templates
-│   │   ├── logger.ts       Structured JSON logger
-│   │   ├── validation.ts   Input sanitization
-│   │   └── authHelpers.ts  Role check utilities
-│   └── scripts/
-│       ├── seedPlans.mjs   Seed plans to Firestore
-│       └── bootstrap-admin.ts  Grant admin role to a user
+├── functions/src/fieldstack/
+│   ├── schedules.ts        PDF upload + Claude vision parse pipeline
+│   ├── fromSchedule.ts     Create project from PDF (no pre-existing project)
+│   ├── inviteSub.ts        GC invite flow + HMAC-signed tokens
+│   ├── pendingChanges.ts   Sub date change requests + GC approval
+│   ├── steps.ts            Step status updates + cascade logic
+│   ├── chat.ts             AI Foreman chat + briefing
+│   ├── orders.ts           Order item management
+│   ├── projects.ts         Project CRUD
+│   ├── team.ts             Team member management
+│   └── types.ts            COLLECTIONS map + shared types
 │
-├── landing-site/           Static marketing/landing page
-│   └── public/             Pure HTML/CSS - no build step
-│
-├── email-templates/        Standalone HTML email previews (reference only)
-├── firestore.rules         Firestore security rules
+├── firestore.rules         Multi-tenant security rules
 ├── firestore.indexes.json  Composite indexes
-├── firebase.json           Firebase project config
-├── .firebaserc             Project aliases
-├── scripts/
-│   └── init-project.ts     Project initializer
-├── QUICKSTART.md           Setup guide
-└── ARCHITECTURE.md         Technical reference
+└── firebase.json           Hosting rewrites for all API endpoints
 ```
 
 ---
 
-## Adding a feature
-
-The `Items` feature is the reference implementation. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full pattern.
-
-Short version: add a Firestore subcollection, a Cloud Function, a rewrite in `firebase.json`, API helpers in `api.ts`, a real-time hook, and a page.
-
----
-
-## Rebranding
-
-Run `scripts/init-project.ts` - it handles most replacements automatically. Then:
-
-1. Replace logo files in `frontend/public/` and `landing-site/public/`
-2. Update `frontend/src/lib/config.ts` for brand colors
-3. Update `landing-site/public/index.html` with your product copy
-
----
-
-## Tests
+## Local development
 
 ```bash
-bun run test --cwd frontend    # 50 tests
-bun run test --cwd functions   # 141 tests
+# Install
+cd frontend && npm install
+cd functions && npm install
+
+# Run emulators
+firebase emulators:start
+
+# Frontend dev server (in a separate terminal)
+cd frontend && npm run dev
 ```
+
+Set `VITE_USE_EMULATORS=true` in `frontend/.env` to point the app at local emulators.
 
 ---
 
 ## Deploy
 
 ```bash
-firebase deploy --project your-project-id
+# Build
+cd functions && npm run build
+cd frontend && npm run build
+
+# Deploy everything
+firebase deploy
+
+# Deploy only functions
+firebase deploy --only functions
+
+# Deploy only hosting + rules
+firebase deploy --only hosting,firestore:rules
 ```
 
-Or push to `master` to trigger the GitHub Actions production deploy. See [QUICKSTART.md](QUICKSTART.md) for the required GitHub Secrets.
+**Required Firebase Secrets** (set via `firebase functions:secrets:set <NAME>`):
+- `ANTHROPIC_API_KEY` — schedule parsing and AI features
+
+**Required `functions/.env` values:**
+- `APP_URL` — your hosting URL (used in invite email links)
+- `CORS_ORIGIN` — comma-separated allowed origins (same as APP_URL)
+- `RESEND_API_KEY` — invite and notification emails
+- `EMAIL_FROM` — sender address e.g. `FieldStack <noreply@yourdomain.com>`
+- `MAGIC_LINK_SECRET` — JWT signing secret for magic link auth
+- `INVITE_SECRET` — HMAC signing secret for sub invite tokens
+
+---
+
+## Feature backlog
+
+| ID | Feature |
+|---|---|
+| fi-kcp | Procore & Buildertrend auto-sync (nightly API polling) |
+| fi-0r4 | Secure GC upload link (weekly email with one-time upload URL) |
+| fi-09y | Document repository (RFIs, submittals, contracts, drawings) |
+| fi-j8b | Mobile push notifications |
+| fi-qea | Project finance tracking (sub cost, labor, margin per job) |
