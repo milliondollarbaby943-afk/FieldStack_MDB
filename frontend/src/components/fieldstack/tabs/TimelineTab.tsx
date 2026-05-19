@@ -20,17 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { Timestamp, doc, updateDoc } from "firebase/firestore";
-import { format } from "date-fns";
-import { ChevronDown, Users } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { ChevronDown, Users, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { firestore } from "@/lib/firebase";
-import type { Task } from "@/types/fieldstack";
+import type { Task, TaskStep } from "@/types/fieldstack";
 import { TASK_CATEGORY_LABELS } from "@/types/fieldstack";
 import type { ConnectedSub } from "@/hooks/useProjectConnections";
 
 interface Props {
   tasks: Task[];
+  steps: TaskStep[];
   companyId: string;
   projectId: string;
   connectedSubs: ConnectedSub[];
@@ -39,6 +41,29 @@ interface Props {
 function fmt(ts: Timestamp | undefined | null) {
   if (!ts) return "—";
   return format(ts.toDate(), "MMM d, yyyy");
+}
+
+function fmtRelative(ts: Timestamp | undefined | null) {
+  if (!ts) return null;
+  return formatDistanceToNow(ts.toDate(), { addSuffix: true });
+}
+
+interface TaskProgress {
+  total: number;
+  complete: number;
+  isActive: boolean;
+  lastUpdated: Timestamp | null;
+}
+
+function computeProgress(taskId: string, steps: TaskStep[]): TaskProgress {
+  const taskSteps = steps.filter((s) => s.taskId === taskId);
+  const complete = taskSteps.filter((s) => s.status === "COMPLETE").length;
+  const isActive = taskSteps.some((s) => s.status === "IN_PROGRESS");
+  const lastUpdated = taskSteps.reduce<Timestamp | null>((max, s) => {
+    if (!max) return s.updatedAt;
+    return s.updatedAt.seconds > max.seconds ? s.updatedAt : max;
+  }, null);
+  return { total: taskSteps.length, complete, isActive, lastUpdated };
 }
 
 async function assignTask(
@@ -139,6 +164,7 @@ function AssignButton({
 
 export function TimelineTab({
   tasks,
+  steps,
   companyId,
   projectId,
   connectedSubs,
@@ -150,6 +176,7 @@ export function TimelineTab({
   const [bulkGroup, setBulkGroup] = useState<string>("");
   const [bulkSubId, setBulkSubId] = useState<string>("");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [rollupExpanded, setRollupExpanded] = useState(false);
 
   const displayed = filter === "ours" ? tasks.filter((t) => t.isOurTask) : tasks;
 
@@ -157,6 +184,48 @@ export function TimelineTab({
   const buildings = [...new Set(tasks.map((t) => t.building).filter(Boolean))] as string[];
   const floors = [...new Set(tasks.map((t) => t.floor).filter(Boolean))] as string[];
   const categories = [...new Set(tasks.map((t) => t.category))] as string[];
+
+  // Per-building/floor rollup for assigned tasks
+  type RollupEntry = {
+    key: string;
+    label: string;
+    taskCount: number;
+    assignedCount: number;
+    totalSteps: number;
+    completeSteps: number;
+    subs: string[];
+    hasActive: boolean;
+  };
+  const rollupMap = new Map<string, RollupEntry>();
+  for (const t of tasks) {
+    const segments: string[] = [];
+    if (t.building) segments.push(t.building);
+    if (t.floor) segments.push(t.floor);
+    if (segments.length === 0) continue;
+    const key = segments.join(" / ");
+    const existing = rollupMap.get(key) ?? {
+      key,
+      label: key,
+      taskCount: 0,
+      assignedCount: 0,
+      totalSteps: 0,
+      completeSteps: 0,
+      subs: [],
+      hasActive: false,
+    };
+    const prog = computeProgress(t.id, steps);
+    existing.taskCount++;
+    if (t.assignedSubCompanyId) {
+      existing.assignedCount++;
+      const subName = connectedSubs.find((s) => s.id === t.assignedSubCompanyId)?.name;
+      if (subName && !existing.subs.includes(subName)) existing.subs.push(subName);
+    }
+    existing.totalSteps += prog.total;
+    existing.completeSteps += prog.complete;
+    if (prog.isActive) existing.hasActive = true;
+    rollupMap.set(key, existing);
+  }
+  const rollupEntries = [...rollupMap.values()].filter((e) => e.assignedCount > 0);
 
   const groupOptions =
     bulkGroupBy === "building"
@@ -223,6 +292,59 @@ export function TimelineTab({
           </TabsList>
         </Tabs>
       </div>
+
+      {/* Per-building/floor progress rollup */}
+      {rollupEntries.length > 0 && (
+        <Card>
+          <CardContent className="py-3 px-4">
+            <button
+              onClick={() => setRollupExpanded((e) => !e)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold">Sub Progress by Location</span>
+                {rollupEntries.some((e) => e.hasActive) && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live
+                  </span>
+                )}
+              </div>
+              <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${rollupExpanded ? "rotate-90" : ""}`} />
+            </button>
+            {rollupExpanded && (
+              <div className="mt-3 space-y-3">
+                {rollupEntries.map((entry) => {
+                  const pct = entry.totalSteps > 0
+                    ? Math.round((entry.completeSteps / entry.totalSteps) * 100)
+                    : 0;
+                  return (
+                    <div key={entry.key} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {entry.hasActive && (
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          )}
+                          <span className="text-xs font-medium font-mono truncate">{entry.label}</span>
+                          <div className="flex gap-1 flex-wrap">
+                            {entry.subs.map((s) => (
+                              <Badge key={s} variant="outline" className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-400/40">{s}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono shrink-0">
+                          {entry.completeSteps}/{entry.totalSteps} steps · {pct}%
+                        </div>
+                      </div>
+                      <Progress value={pct} className="h-1.5" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bulk assign panel */}
       {connectedSubs.length > 0 && (
@@ -303,65 +425,87 @@ export function TimelineTab({
               ? (connectedSubs.find((s) => s.id === t.assignedSubCompanyId)?.name ??
                 null)
               : null;
+          const prog = computeProgress(t.id, steps);
+          const hasProgress = prog.total > 0 && t.assignedSubCompanyId;
+          const pct = prog.total > 0 ? Math.round((prog.complete / prog.total) * 100) : 0;
 
           return (
             <Card key={t.id}>
-              <CardContent className="flex items-center justify-between gap-4 py-3 px-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium truncate">
-                      {t.taskName}
-                    </span>
-                    {t.isOurTask && (
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-400/40"
-                      >
-                        Ours
-                      </Badge>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {prog.isActive && (
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      )}
+                      <span className="text-sm font-medium truncate">
+                        {t.taskName}
+                      </span>
+                      {t.isOurTask && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-400/40"
+                        >
+                          Ours
+                        </Badge>
+                      )}
+                      {subName && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-400/40"
+                        >
+                          {subName}
+                        </Badge>
+                      )}
+                    </div>
+                    {(t.building || t.floor) && (
+                      <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                        {[t.building, t.floor].filter(Boolean).join(" – ")}
+                      </div>
                     )}
-                    {subName && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 text-violet-600 border-violet-400/40"
-                      >
-                        {subName}
-                      </Badge>
+                    {hasProgress && (
+                      <div className="mt-2 space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                          <span>{prog.complete}/{prog.total} steps complete</span>
+                          <span className="flex items-center gap-1.5">
+                            {prog.isActive && <span className="text-emerald-600 font-medium">Active</span>}
+                            {prog.lastUpdated && (
+                              <span>{fmtRelative(prog.lastUpdated)}</span>
+                            )}
+                          </span>
+                        </div>
+                        <Progress value={pct} className="h-1" />
+                      </div>
                     )}
                   </div>
-                  {(t.building || t.floor) && (
-                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                      {[t.building, t.floor].filter(Boolean).join(" – ")}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0 text-xs font-mono text-muted-foreground">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wider mb-0.5">
-                      Install
-                    </div>
-                    <div>{fmt(t.gcInstallDate)}</div>
-                  </div>
-                  {t.assignedResource && (
+                  <div className="flex items-center gap-2 shrink-0 text-xs font-mono text-muted-foreground">
                     <div>
                       <div className="text-[10px] uppercase tracking-wider mb-0.5">
-                        Resource
+                        Install
                       </div>
-                      <div>{t.assignedResource}</div>
+                      <div>{fmt(t.gcInstallDate)}</div>
                     </div>
-                  )}
-                  <Badge variant="outline" className="text-[10px]">
-                    {TASK_CATEGORY_LABELS[t.category] ?? t.category}
-                  </Badge>
-                  {connectedSubs.length > 0 && (
-                    <AssignButton
-                      task={t}
-                      companyId={companyId}
-                      projectId={projectId}
-                      connectedSubs={connectedSubs}
-                      subName={subName}
-                    />
-                  )}
+                    {t.assignedResource && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-0.5">
+                          Resource
+                        </div>
+                        <div>{t.assignedResource}</div>
+                      </div>
+                    )}
+                    <Badge variant="outline" className="text-[10px]">
+                      {TASK_CATEGORY_LABELS[t.category] ?? t.category}
+                    </Badge>
+                    {connectedSubs.length > 0 && (
+                      <AssignButton
+                        task={t}
+                        companyId={companyId}
+                        projectId={projectId}
+                        connectedSubs={connectedSubs}
+                        subName={subName}
+                      />
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
