@@ -161,7 +161,7 @@ function projectNameFromFilename(filename: string): string {
 
 // ─── HTTP handler ─────────────────────────────────────────────────────────────
 
-export const fromScheduleApi = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).https.onRequest((req, res) => {
+export const fromScheduleApi = functions.runWith({ timeoutSeconds: 300, memory: "512MB", secrets: ["ANTHROPIC_API_KEY"] }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 

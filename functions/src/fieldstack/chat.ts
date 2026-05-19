@@ -32,7 +32,7 @@ const corsHandler = cors({
   credentials: true,
 });
 
-export const chatApi = functions.https.onRequest((req, res) => {
+export const chatApi = functions.runWith({ secrets: ["ANTHROPIC_API_KEY"] }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     let companyId: string;
     let uid: string;
@@ -94,7 +94,7 @@ export const chatApi = functions.https.onRequest((req, res) => {
   });
 });
 
-export const briefingApi = functions.https.onRequest((req, res) => {
+export const briefingApi = functions.runWith({ secrets: ["ANTHROPIC_API_KEY"] }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== "GET") { res.status(405).json({ error: "Method not allowed" }); return; }
 
