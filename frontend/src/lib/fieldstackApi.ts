@@ -47,6 +47,8 @@ const FUNCTION_PATHS: Record<string, string> = {
   escalationApi:          "/api/alerts/escalate",
   gcDraftApi:             "/api/gc-draft",
   fromScheduleApi:        "/api/projects/from-schedule",
+  inviteSubApi:           "/api/projects",
+  inviteAcceptApi:        "/api/invite/accept",
   itemsApi:               "/api/items",
   submitSupportTicket:    "/api/support",
   getAdminStats:          "/api/admin-stats",
@@ -336,4 +338,28 @@ export async function apiRejectPendingChange(changeId: string, reason?: string):
     method: "PATCH",
     body: JSON.stringify({ reason }),
   });
+}
+
+// ─── Sub invite ───────────────────────────────────────────────────────────────
+
+export async function apiInviteSub(projectId: string, subEmail: string): Promise<{ connectionId: string }> {
+  return callFunction("inviteSubApi", `/${projectId}/invite-sub`, { method: "POST", body: JSON.stringify({ subEmail }) });
+}
+
+export async function apiGetInviteInfo(inviteToken: string): Promise<{
+  gcCompanyName: string;
+  gcProjectName: string;
+  subEmail: string;
+}> {
+  const base = functionsBaseUrl ? `${functionsBaseUrl}/inviteAcceptApi` : "/api/invite/accept";
+  const r = await fetch(`${base}?token=${encodeURIComponent(inviteToken)}`);
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({ error: r.statusText }));
+    throw new ApiError(typeof body?.error === "string" ? body.error : `Request failed (${r.status})`, r.status, false);
+  }
+  return r.json();
+}
+
+export async function apiAcceptInvite(token: string): Promise<{ gcProjectId: string; gcCompanyId: string }> {
+  return callFunction("inviteAcceptApi", "", { method: "POST", body: JSON.stringify({ token }) });
 }
