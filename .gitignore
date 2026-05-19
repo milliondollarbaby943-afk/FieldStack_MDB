@@ -37,3 +37,10 @@ Thumbs.db
 *.key
 *.p12
 *.pfx
+
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.logs/
+__pycache__/
+state.json
