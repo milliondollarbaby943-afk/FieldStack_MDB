@@ -117,6 +117,7 @@ const App = () => (
             <Routes>
               <Route path="/auth/action" element={<AuthAction />} />
               <Route path="/tasks/action" element={<MagicLinkAction />} />
+              <Route path="/invite/accept" element={<AcceptInvitePage />} />
               <Route path="*" element={<AuthGate />} />
             </Routes>
           </BrowserRouter>

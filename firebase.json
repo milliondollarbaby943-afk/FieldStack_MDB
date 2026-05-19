@@ -219,6 +219,14 @@
           "function": "pendingChangesApi"
         },
         {
+          "source": "/api/projects/*/invite-sub",
+          "function": "inviteSubApi"
+        },
+        {
+          "source": "/api/invite/accept",
+          "function": "inviteAcceptApi"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }
