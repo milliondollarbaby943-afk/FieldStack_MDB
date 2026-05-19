@@ -12,6 +12,17 @@ service cloud.firestore {
     return request.auth != null;
   }
 
+  // Returns the authenticated user's company ID from custom auth claims.
+  // Set by Cloud Functions when a user creates or joins a company.
+  function userCompanyId() {
+    return request.auth.token.companyId;
+  }
+
+  // True when the authenticated user belongs to a SUB-contractor company.
+  function isSubMember() {
+    return isAuthenticated() && request.auth.token.companyType == 'SUB' && userCompanyId() != null;
+  }
+
   match /databases/{database}/documents {
 
     // ── Platform infrastructure (server-side only) ────────────────────────
@@ -110,15 +121,36 @@ service cloud.firestore {
       // Updates/deletes are server-side only
       allow update, delete: if false;
 
+      // Project connections — GC company members read only; server writes
+      // Doc ID convention: {gcProjectId}_{subCompanyId}
+      match /projectConnections/{connectionId} {
+        allow read: if isMember();
+        allow write: if false;
+      }
+
       // Projects
       match /projects/{projectId} {
-        allow read: if isMember();
+        // True when an authenticated Sub user has an active connection to this GC project.
+        // Requires a projectConnection doc at companies/{companyId}/projectConnections/{projectId}_{subCompanyId}
+        // with status == 'active'. The doc ID convention is enforced by the server invite flow.
+        function hasActiveSubConnection() {
+          return isSubMember()
+            && exists(/databases/$(database)/documents/companies/$(companyId)/projectConnections/$(projectId + "_" + userCompanyId()))
+            && get(/databases/$(database)/documents/companies/$(companyId)/projectConnections/$(projectId + "_" + userCompanyId())).data.status == 'active';
+        }
+
+        // GC members: full read. Sub users: read projects they are connected to.
+        allow read: if isMember() || hasActiveSubConnection();
         allow write: if false; // server-side only
 
-        // Project subcollections — readable by company members
+        // Tasks
         match /tasks/{taskId} {
-          allow read: if isMember();
-          allow write: if false;
+          // GC members: all tasks. Sub users: only tasks assigned to their company.
+          allow read: if isMember()
+            || (isSubMember()
+              && resource.data.assignedSubCompanyId == userCompanyId()
+              && hasActiveSubConnection());
+          allow write: if false; // server-side only
         }
 
         match /orderItems/{itemId} {
@@ -131,9 +163,21 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // Task steps
         match /taskSteps/{stepId} {
-          allow read: if isMember();
+          // GC members: full read. Sub users: read all steps on their connected projects.
+          allow read: if isMember() || hasActiveSubConnection();
+
+          // GC: server-side only
           allow write: if false;
+
+          // Sub users may update status and notes on steps where canEditBy permits.
+          // They may never change dates, step type, or any other GC-owned fields.
+          allow update: if isSubMember()
+            && hasActiveSubConnection()
+            && (resource.data.canEditBy == 'SUB' || resource.data.canEditBy == 'BOTH')
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'notes', 'updatedAt']);
         }
 
         match /feedEntries/{entryId} {
