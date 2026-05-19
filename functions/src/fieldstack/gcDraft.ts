@@ -27,7 +27,7 @@ const corsHandler = cors({
   credentials: true,
 });
 
-export const gcDraftApi = functions.https.onRequest((req, res) => {
+export const gcDraftApi = functions.runWith({ secrets: ["ANTHROPIC_API_KEY"] }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 

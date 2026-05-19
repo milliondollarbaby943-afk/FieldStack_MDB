@@ -553,7 +553,7 @@ async function updateProjectAlertCounts(projectId: string, companyId: string): P
 
 // ─── Cloud Function ───────────────────────────────────────────────────────────
 
-export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memory: "512MB" }).https.onRequest((req, res) => {
+export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memory: "512MB", secrets: ["ANTHROPIC_API_KEY"] }).https.onRequest((req, res) => {
   corsHandler(req, res, async () => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
 
