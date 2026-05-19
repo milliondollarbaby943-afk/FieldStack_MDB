@@ -6,6 +6,9 @@ import { Timestamp } from "firebase/firestore";
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETE";
+export type CompanyType = "GC" | "SUB";
+export type ProjectConnectionStatus = "pending" | "active";
+export type CanEditBy = "GC" | "SUB" | "BOTH";
 export type GcPlatform = "PROCORE" | "BUILDERTREND" | "OTHER";
 export type TaskCategory = "CABINET_DELIVERY" | "CABINET_INSTALL" | "COUNTERTOP_SET" | "OTHER";
 export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE";
@@ -35,9 +38,23 @@ export interface Company {
   name: string;
   slug: string;
   plan: CompanyPlan;
+  companyType: CompanyType;
   stripeCustomerId?: string | null;
   stripeSubId?: string | null;
   trialEndsAt?: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ─── ProjectConnection (companies/{gcCompanyId}/projectConnections/{id}) ─────
+// Links a GC project to a subcontractor company.
+
+export interface ProjectConnection {
+  id: string;
+  gcCompanyId: string;
+  gcProjectId: string;
+  subCompanyId: string;
+  status: ProjectConnectionStatus;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -105,6 +122,7 @@ export interface Task {
   gcInstallDate: Timestamp;
   gcInstallDateEnd?: Timestamp | null;
   assignedResource?: string | null;
+  assignedSubCompanyId?: string | null;
   category: TaskCategory;
   isOurTask: boolean;
   createdAt: Timestamp;
@@ -176,6 +194,7 @@ export interface TaskStep {
   building?: string | null;
   floor?: string | null;
   stepType: StepType;
+  canEditBy: CanEditBy;
   assignedToId?: string | null;
   assignedToName?: string | null;
   dueDate?: Timestamp | null;

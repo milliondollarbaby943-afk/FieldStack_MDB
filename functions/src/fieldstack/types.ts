@@ -4,6 +4,7 @@
  * Multi-tenant structure:
  *   companies/{companyId}
  *   companies/{companyId}/members/{uid}          ← via companyMembers flat collection
+ *   companies/{companyId}/projectConnections/{connectionId}
  *   companies/{companyId}/projects/{projectId}
  *   companies/{companyId}/projects/{projectId}/tasks/{taskId}
  *   companies/{companyId}/projects/{projectId}/orderItems/{itemId}
@@ -20,6 +21,7 @@
 export const COLLECTIONS = {
   companies: "companies",
   companyMembers: "companyMembers",
+  projectConnections: (companyId: string) => `companies/${companyId}/projectConnections`,
   projects: (companyId: string) => `companies/${companyId}/projects`,
   tasks: (companyId: string, projectId: string) => `companies/${companyId}/projects/${projectId}/tasks`,
   orderItems: (companyId: string, projectId: string) => `companies/${companyId}/projects/${projectId}/orderItems`,
@@ -33,6 +35,9 @@ export const COLLECTIONS = {
 } as const;
 
 export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETE";
+export type CompanyType = "GC" | "SUB";
+export type ProjectConnectionStatus = "pending" | "active";
+export type CanEditBy = "GC" | "SUB" | "BOTH";
 export type OrderStatus = "NOT_ORDERED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
 export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE";
 export type TaskCategory = "CABINET_DELIVERY" | "CABINET_INSTALL" | "COUNTERTOP_SET" | "OTHER";
