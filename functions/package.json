@@ -6,6 +6,7 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "test": "vitest run",
+    "test:rules": "firebase emulators:exec --only firestore 'vitest run src/firestore.rules.test.ts'",
     "seed:plans": "node scripts/seedPlans.mjs",
     "seed:plans:prod": "GCLOUD_PROJECT=YOUR_PROJECT_ID node scripts/seedPlans.mjs",
     "seed:plans:emulator": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node scripts/seedPlans.mjs"
@@ -23,9 +24,11 @@
     "stripe": "22.0.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/busboy": "^1.5.4",
     "@types/cors": "2.8.17",
     "fast-check": "3.23.2",
+    "firebase": "^12.13.0",
     "typescript": "5.8.3",
     "vitest": "4.1.4"
   }
