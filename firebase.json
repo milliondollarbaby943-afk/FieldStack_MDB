@@ -211,6 +211,14 @@
           "function": "fromScheduleApi"
         },
         {
+          "source": "/api/pending-changes/**",
+          "function": "pendingChangesApi"
+        },
+        {
+          "source": "/api/pending-changes",
+          "function": "pendingChangesApi"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }

@@ -825,3 +825,4 @@ export { escalationApi, escalationCron, digestCron } from "./fieldstack/escalati
 export { gcDraftApi } from "./fieldstack/gcDraft";
 export { fromScheduleApi } from "./fieldstack/fromSchedule";
 export { procoreCallbackApi, procoreWebhookApi, procoreSyncApi, procoreSyncCron } from "./fieldstack/procore";
+export { pendingChangesApi } from "./fieldstack/pendingChanges";
