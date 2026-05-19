@@ -7,6 +7,7 @@ import { useState, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useTeam } from "@/hooks/useTeam";
+import { useProjectConnections } from "@/hooks/useProjectConnections";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,7 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { project, tasks, orderItems, changes, steps, feed, alerts, loading, ourTasks, criticalAlerts, warningAlerts } = useProjectData(id);
   const { team } = useTeam();
+  const { connectedSubs } = useProjectConnections(id);
   const [tab, setTab] = useState<Tab>("Overview");
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -285,7 +287,12 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="Timeline">
-          <TimelineTab tasks={tasks} />
+          <TimelineTab
+            tasks={tasks}
+            companyId={project.companyId}
+            projectId={id!}
+            connectedSubs={connectedSubs}
+          />
         </TabsContent>
 
         <TabsContent value="Orders">
