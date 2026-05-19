@@ -77,8 +77,19 @@ export default function Login() {
     try {
       await signInWithGoogle();
     } catch (err: unknown) {
-      if ((err as { code?: string })?.code !== "auth/popup-closed-by-user") {
-        setError("Google sign-in failed. Please try again.");
+      const code = (err as { code?: string })?.code ?? "";
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        // user closed — silent
+      } else if (code === "auth/popup-blocked") {
+        setError("Popup was blocked by your browser. Please allow popups for this site and try again.");
+      } else if (code === "auth/unauthorized-domain") {
+        setError("This domain is not authorized for Google sign-in. Contact support.");
+      } else if (code === "auth/operation-not-allowed") {
+        setError("Google sign-in is not enabled. Contact support.");
+      } else if (code === "auth/access-denied" || code === "access_denied") {
+        setError("Google sign-in was denied. If you see an 'unverified app' warning, click Advanced → proceed to sign in.");
+      } else {
+        setError(`Google sign-in failed (${code || "unknown error"}). Please try again.`);
       }
     } finally {
       setLoading(false);
