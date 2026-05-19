@@ -3,8 +3,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   signOut,
   confirmPasswordReset,
   applyActionCode,
@@ -79,17 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [emailVerified, setEmailVerified] = useState(false);
 
   useEffect(() => {
-    // Complete any pending Google redirect sign-in (fires once on page load after redirect)
-    if (!useEmulators) {
-      getRedirectResult(auth).then((result) => {
-        if (result?.user) {
-          console.log(`[AuthContext] getRedirectResult SUCCESS uid=${result.user.uid}`);
-        }
-      }).catch((err) => {
-        console.error(`[AuthContext] getRedirectResult error`, err);
-      });
-    }
-
     let profileUnsub: (() => void) | null = null;
     let profileTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let claimTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -370,9 +358,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log(`[AuthContext] signInWithGoogle (emulator) SUCCESS uid=${result.user.uid}`);
         return;
       }
-      // signInWithRedirect navigates away; result is handled by getRedirectResult on return
-      await signInWithRedirect(auth, googleProvider);
-      console.log(`[AuthContext] signInWithGoogle redirect initiated`);
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log(`[AuthContext] signInWithGoogle SUCCESS uid=${result.user.uid} email=${result.user.email}`);
     } catch (err: unknown) {
       console.error(`[AuthContext] signInWithGoogle FAILED`, err);
       throw err;
