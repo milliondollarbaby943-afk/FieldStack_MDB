@@ -26,6 +26,8 @@ import FieldStackSettings from "./pages/FieldStackSettings";
 import MyTasksPage from "./pages/MyTasksPage";
 import CompanySetup from "./pages/CompanySetup";
 import MagicLinkAction from "./pages/MagicLinkAction";
+import AcceptInvitePage from "./pages/AcceptInvitePage";
+import SubDashboardPage from "./pages/SubDashboardPage";
 
 const SystemAdmin = lazy(() => import("./pages/SystemAdmin"));
 
@@ -47,13 +49,15 @@ function AppRoutes() {
     return <CompanySetup />;
   }
 
+  const isSub = company.companyType === "SUB";
+
   return (
     <AppLayout>
       <ErrorBoundary>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/team" element={<TeamPage />} />
+          <Route path="/" element={isSub ? <SubDashboardPage /> : <Dashboard />} />
+          {!isSub && <Route path="/projects/:id" element={<ProjectDetail />} />}
+          {!isSub && <Route path="/team" element={<TeamPage />} />}
           <Route path="/my-tasks" element={<MyTasksPage />} />
           <Route path="/settings" element={<FieldStackSettings />} />
           <Route path="/billing" element={<Billing />} />
