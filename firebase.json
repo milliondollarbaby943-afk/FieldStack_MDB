@@ -111,6 +111,14 @@
           "function": "reportFrontendError"
         },
         {
+          "source": "/api/projects/from-schedule",
+          "function": "fromScheduleApi"
+        },
+        {
+          "source": "/api/projects/*/invite-sub",
+          "function": "inviteSubApi"
+        },
+        {
           "source": "/api/projects/**",
           "function": "projectsApi"
         },
@@ -207,20 +215,12 @@
           "function": "gcDraftApi"
         },
         {
-          "source": "/api/projects/from-schedule",
-          "function": "fromScheduleApi"
-        },
-        {
           "source": "/api/pending-changes/**",
           "function": "pendingChangesApi"
         },
         {
           "source": "/api/pending-changes",
           "function": "pendingChangesApi"
-        },
-        {
-          "source": "/api/projects/*/invite-sub",
-          "function": "inviteSubApi"
         },
         {
           "source": "/api/invite/accept",
