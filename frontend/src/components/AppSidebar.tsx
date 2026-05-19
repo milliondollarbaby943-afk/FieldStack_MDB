@@ -9,6 +9,7 @@ import {
   CheckSquare,
   Bot,
   FolderOpen,
+  HardHat,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,10 +36,15 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const navItems = [
+const gcNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutGrid },
   { title: "My Tasks", url: "/my-tasks", icon: CheckSquare },
   { title: "Team", url: "/team", icon: Users },
+];
+
+const subNavItems = [
+  { title: "My Projects", url: "/", icon: HardHat },
+  { title: "My Tasks", url: "/my-tasks", icon: CheckSquare },
 ];
 
 const accountItems = [
@@ -57,6 +63,8 @@ export function AppSidebar({ onOpenChat }: { onOpenChat?: () => void }) {
   const location = useLocation();
   const displayName = profile?.displayName ?? user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
+  const isSub = company?.companyType === "SUB";
+  const navItems = isSub ? subNavItems : gcNavItems;
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
 
   return (
@@ -117,8 +125,8 @@ export function AppSidebar({ onOpenChat }: { onOpenChat?: () => void }) {
                   </Tooltip>
                 </SidebarMenuItem>
               ))}
-              {/* AI Foreman button */}
-              {onOpenChat && (
+              {/* AI Foreman button (GC only) */}
+              {!isSub && onOpenChat && (
                 <SidebarMenuItem>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -140,8 +148,8 @@ export function AppSidebar({ onOpenChat }: { onOpenChat?: () => void }) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Active Projects */}
-        {!collapsed && activeProjects.length > 0 && (
+        {/* Active Projects (GC only) */}
+        {!isSub && !collapsed && activeProjects.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Active Projects</SidebarGroupLabel>
             <SidebarGroupContent>

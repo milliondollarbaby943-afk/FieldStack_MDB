@@ -201,6 +201,7 @@ export interface TaskStep {
   completedAt?: Timestamp | null;
   status: StepStatus;
   notes?: string | null;
+  canEditBy?: "GC" | "SUB" | "BOTH" | null;
   track: StepTrack;
   dependsOnId?: string | null;
   createdAt: Timestamp;
