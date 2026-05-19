@@ -289,6 +289,7 @@ export default function ProjectDetail() {
         <TabsContent value="Timeline">
           <TimelineTab
             tasks={tasks}
+            steps={steps}
             companyId={project.companyId}
             projectId={id!}
             connectedSubs={connectedSubs}
