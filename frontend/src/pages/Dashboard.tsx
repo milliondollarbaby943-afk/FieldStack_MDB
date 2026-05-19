@@ -1,6 +1,6 @@
 /**
  * Dashboard — project list with daily briefing and stats.
- * Drag-and-drop schedule upload to create a new project.
+ * Drag-and-drop a schedule PDF to auto-create a project.
  */
 
 import { useState, useRef } from "react";
@@ -10,13 +10,16 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, AlertTriangle, CheckCircle2, Clock, FolderOpen } from "lucide-react";
+import { Loader2, Plus, AlertTriangle, CheckCircle2, Clock, FolderOpen, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { Timestamp } from "firebase/firestore";
 import type { Project } from "@/types/fieldstack";
 import { NewProjectDialog } from "@/components/fieldstack/NewProjectDialog";
+import { apiCreateProjectFromSchedule } from "@/lib/fieldstackApi";
+
+const VALID_EXTS = [".pdf", ".txt", ".csv"];
 
 function alertDot(p: Project) {
   const c = p.alertCounts;
@@ -45,12 +48,34 @@ export default function Dashboard() {
   const { projects, loading } = useProjects();
   const [showNewProject, setShowNewProject] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
   const totalCritical = projects.reduce((s, p) => s + (p.alertCounts?.critical ?? 0), 0);
   const totalWarning = projects.reduce((s, p) => s + (p.alertCounts?.warning ?? 0), 0);
+
+  async function handleScheduleFile(f: File) {
+    const ext = "." + (f.name.split(".").pop()?.toLowerCase() ?? "");
+    if (!VALID_EXTS.includes(ext)) {
+      toast.error("Unsupported file type. Drop a PDF, TXT, or CSV schedule.");
+      return;
+    }
+    setParsing(true);
+    try {
+      const result = await apiCreateProjectFromSchedule(f);
+      toast.success(
+        `Project created: ${result.tasksCreated} tasks, ${result.orderItemsCreated} orders`
+      );
+      navigate(`/projects/${result.projectId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to parse schedule.");
+    } finally {
+      setParsing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   function onDragEnter(e: React.DragEvent) {
     e.preventDefault();
@@ -68,9 +93,7 @@ export default function Dashboard() {
     dragCounter.current = 0;
     setDragOver(false);
     const f = e.dataTransfer.files[0];
-    if (f) {
-      toast.info("Drop a schedule on an existing project, or create a new project first.");
-    }
+    if (f) handleScheduleFile(f);
   }
 
   return (
@@ -81,13 +104,26 @@ export default function Dashboard() {
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
+      {/* Parsing overlay */}
+      {parsing && (
+        <div className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center">
+          <div className="border rounded-2xl px-16 py-14 text-center bg-card shadow-xl max-w-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-4" />
+            <div className="text-base font-semibold mb-2">Parsing schedule…</div>
+            <div className="text-sm text-muted-foreground">
+              AI is extracting project info and tasks. This takes about 20–40 seconds.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Drop overlay */}
-      {dragOver && (
+      {dragOver && !parsing && (
         <div className="fixed inset-0 z-50 bg-background/90 flex items-center justify-center pointer-events-none">
           <div className="border-2 border-dashed border-primary rounded-2xl px-20 py-16 text-center bg-primary/5">
             <div className="text-5xl mb-4 opacity-60">📄</div>
             <div className="text-lg font-semibold text-primary mb-2">Drop schedule to create a project</div>
-            <div className="text-sm text-muted-foreground">FieldStack will extract project name, GC, and tasks</div>
+            <div className="text-sm text-muted-foreground">FieldStack will extract project name, GC, and all tasks</div>
           </div>
         </div>
       )}
@@ -95,26 +131,37 @@ export default function Dashboard() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.xlsx,.xls,.txt,.csv"
+        accept=".pdf,.txt,.csv"
         hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) toast.info("Create a project first, then upload the schedule from the project page.");
+          if (f) handleScheduleFile(f);
         }}
       />
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
             <p className="text-sm text-muted-foreground mt-1 font-mono">
               {company?.name} · {format(new Date(), "EEEE, MMMM d, yyyy")}
             </p>
           </div>
-          <Button onClick={() => setShowNewProject(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> New Project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsing}
+              className="gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              From Schedule
+            </Button>
+            <Button onClick={() => setShowNewProject(true)} disabled={parsing} className="gap-2">
+              <Plus className="h-4 w-4" /> New Project
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -162,21 +209,32 @@ export default function Dashboard() {
         )}
 
         {!loading && projects.length === 0 && (
-          <Card
-            className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
-            onClick={() => setShowNewProject(true)}
-          >
-            <CardContent className="py-16 text-center">
-              <div className="text-5xl mb-4 opacity-40">📄</div>
-              <p className="text-lg font-semibold mb-2">Create your first project</p>
-              <p className="text-sm text-muted-foreground mb-6">
-                Add a project, then upload a GC schedule — AI will extract all tasks automatically.
-              </p>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" /> New Project
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Card
+              className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <CardContent className="py-12 text-center">
+                <Upload className="h-9 w-9 mx-auto mb-3 text-primary opacity-60" />
+                <p className="text-sm font-semibold mb-1">From Schedule PDF</p>
+                <p className="text-xs text-muted-foreground">
+                  Drop a GC schedule — AI extracts project, tasks, and order dates automatically.
+                </p>
+              </CardContent>
+            </Card>
+            <Card
+              className="border-dashed cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+              onClick={() => setShowNewProject(true)}
+            >
+              <CardContent className="py-12 text-center">
+                <Plus className="h-9 w-9 mx-auto mb-3 text-muted-foreground opacity-60" />
+                <p className="text-sm font-semibold mb-1">Manual Entry</p>
+                <p className="text-xs text-muted-foreground">
+                  Create a project manually, then upload the schedule from the project page.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {!loading && projects.length > 0 && (

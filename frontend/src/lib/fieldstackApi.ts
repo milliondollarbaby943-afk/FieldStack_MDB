@@ -159,6 +159,31 @@ export async function apiUploadSchedule(
   return res.json();
 }
 
+// ─── Create Project from Schedule ────────────────────────────────────────────
+
+export async function apiCreateProjectFromSchedule(
+  file: File
+): Promise<{ projectId: string; tasksCreated: number; orderItemsCreated: number; chainsCreated: number }> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError("You must be signed in.", 401, false);
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  const res = await fetch(apiPath("fromScheduleApi"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(body?.error ?? `Upload failed (${res.status})`, res.status, res.status >= 500);
+  }
+
+  return res.json();
+}
+
 // ─── Orders ───────────────────────────────────────────────────────────────────
 
 export async function apiUpdateOrder(
