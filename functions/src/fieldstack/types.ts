@@ -22,7 +22,7 @@
 export const COLLECTIONS = {
   companies: "companies",
   companyMembers: "companyMembers",
-  projectConnections: (companyId: string) => `companies/${companyId}/projectConnections`,
+  projectConnections: (companyId: string, _projectId?: string) => `companies/${companyId}/projectConnections`,
   projects: (companyId: string) => `companies/${companyId}/projects`,
   tasks: (companyId: string, projectId: string) => `companies/${companyId}/projects/${projectId}/tasks`,
   orderItems: (companyId: string, projectId: string) => `companies/${companyId}/projects/${projectId}/orderItems`,
