@@ -12,7 +12,7 @@
     "seed:plans:emulator": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node scripts/seedPlans.mjs"
   },
   "engines": {
-    "node": "24"
+    "node": "20"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "3.4.5",
