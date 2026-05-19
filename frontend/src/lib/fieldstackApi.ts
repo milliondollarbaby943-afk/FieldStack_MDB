@@ -38,6 +38,7 @@ const FUNCTION_PATHS: Record<string, string> = {
   leadTimesApi:           "/api/settings/lead-times",
   smsBriefingApi:         "/api/sms-briefing",
   myTasksApi:             "/api/my-tasks",
+  pendingChangesApi:      "/api/pending-changes",
   procoreAuthUrlApi:      "/api/procore/auth-url",
   procoreSyncApi:         "/api/procore/sync",
   procoreCallbackApi:     "/api/procore/callback",
@@ -308,4 +309,31 @@ export async function apiSendSmsBriefing(phoneNumber: string): Promise<{ sent: b
 
 export async function apiGetMyTasks(): Promise<object[]> {
   return callFunction("myTasksApi");
+}
+
+// ─── Pending Changes ──────────────────────────────────────────────────────────
+
+export async function apiGetPendingChanges(projectId: string): Promise<object[]> {
+  return callFunction("pendingChangesApi", `?projectId=${encodeURIComponent(projectId)}`);
+}
+
+export async function apiRequestDateChange(data: {
+  projectId: string;
+  taskId: string;
+  requestedDate: string;
+  notes?: string;
+  requestedByName?: string;
+}): Promise<{ id: string }> {
+  return callFunction("pendingChangesApi", "", { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function apiApprovePendingChange(changeId: string): Promise<void> {
+  return callFunction("pendingChangesApi", `/${changeId}/approve`, { method: "PATCH" });
+}
+
+export async function apiRejectPendingChange(changeId: string, reason?: string): Promise<void> {
+  return callFunction("pendingChangesApi", `/${changeId}/reject`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason }),
+  });
 }

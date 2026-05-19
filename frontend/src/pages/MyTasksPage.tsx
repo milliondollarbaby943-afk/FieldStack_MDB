@@ -1,24 +1,40 @@
 /**
  * MyTasksPage — shows task steps assigned to the current user across all projects.
+ * Subs can request a date change for any task from here.
  */
 
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CheckSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Loader2, CheckSquare, CalendarClock } from "lucide-react";
 import { motion } from "framer-motion";
-import { Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
-import { apiGetMyTasks } from "@/lib/fieldstackApi";
+import { toast } from "sonner";
+import { apiGetMyTasks, apiRequestDateChange } from "@/lib/fieldstackApi";
 import { STEP_TYPE_LABELS } from "@/types/fieldstack";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MyTask {
   id: string;
+  taskId?: string;
+  projectId?: string;
   stepType: string;
   status: string;
   building?: string;
   floor?: string;
   dueDate?: string;
+  installDate?: string;
   projectName: string;
   notes?: string;
 }
@@ -30,9 +46,106 @@ function statusBadge(status: string) {
   return <Badge variant="outline" className="text-muted-foreground text-[10px]">Pending</Badge>;
 }
 
+interface DateChangeDialogProps {
+  task: MyTask;
+  userName: string;
+  onClose: () => void;
+}
+
+function DateChangeDialog({ task, userName, onClose }: DateChangeDialogProps) {
+  const [newDate, setNewDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit() {
+    if (!newDate) { toast.error("Please select a new date."); return; }
+    if (!task.taskId || !task.projectId) { toast.error("Task information missing."); return; }
+
+    setLoading(true);
+    try {
+      await apiRequestDateChange({
+        projectId: task.projectId,
+        taskId: task.taskId,
+        requestedDate: newDate,
+        notes: notes || undefined,
+        requestedByName: userName,
+      });
+      toast.success("Date change request submitted. The GC will review it.");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit request.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const currentDate = task.installDate
+    ? format(new Date(task.installDate), "MMM d, yyyy")
+    : task.dueDate
+    ? format(new Date(task.dueDate), "MMM d, yyyy")
+    : null;
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v && !loading) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base">Request Date Change</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div>
+            <p className="text-sm font-medium mb-0.5">
+              {STEP_TYPE_LABELS[task.stepType as keyof typeof STEP_TYPE_LABELS] ?? task.stepType}
+            </p>
+            <p className="text-xs text-muted-foreground font-mono">
+              {task.projectName}
+              {(task.building || task.floor) && ` · ${[task.building, task.floor].filter(Boolean).join(" – ")}`}
+            </p>
+          </div>
+          {currentDate && (
+            <p className="text-xs text-muted-foreground">
+              Current date: <span className="font-mono">{currentDate}</span>
+            </p>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor="new-date" className="text-xs">New install date</Label>
+            <Input
+              id="new-date"
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="notes" className="text-xs">Notes (optional)</Label>
+            <Textarea
+              id="notes"
+              placeholder="Explain why the date needs to change…"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="text-xs min-h-[72px] resize-none"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={loading}>
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+            Submit Request
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MyTasksPage() {
   const [tasks, setTasks] = useState<MyTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateChangeTask, setDateChangeTask] = useState<MyTask | null>(null);
+  const { user, profile } = useAuth();
+
+  const userName = profile?.displayName ?? user?.displayName ?? user?.email ?? "";
 
   useEffect(() => {
     apiGetMyTasks()
@@ -92,11 +205,30 @@ export default function MyTasksPage() {
                     </span>
                   )}
                   {statusBadge(t.status)}
+                  {t.taskId && t.projectId && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => setDateChangeTask(t)}
+                    >
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      Request Date Change
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+      )}
+
+      {dateChangeTask && (
+        <DateChangeDialog
+          task={dateChangeTask}
+          userName={userName}
+          onClose={() => setDateChangeTask(null)}
+        />
       )}
     </div>
   );

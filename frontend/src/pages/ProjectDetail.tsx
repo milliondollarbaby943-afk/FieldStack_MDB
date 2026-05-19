@@ -1,9 +1,9 @@
 /**
  * ProjectDetail — full project page with tabs:
- * Overview | Feed | Workflow | Timeline | Orders | Upload | Changes | Settings
+ * Overview | Feed | Workflow | Timeline | Orders | Upload | Changes | Pending | Settings
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useTeam } from "@/hooks/useTeam";
@@ -26,9 +26,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { apiUpdateProject, apiDeleteProject, apiUploadSchedule, apiSendAlerts } from "@/lib/fieldstackApi";
+import { apiUpdateProject, apiDeleteProject, apiUploadSchedule, apiSendAlerts, apiGetPendingChanges } from "@/lib/fieldstackApi";
 import { alertColor, alertVariant } from "@/lib/alerts";
-import type { Alert, Task, OrderItem, ScheduleChange, TaskStep, FeedEntry } from "@/types/fieldstack";
+import type { Alert, Task, OrderItem, ScheduleChange, TaskStep, FeedEntry, PendingChange } from "@/types/fieldstack";
 import { ITEM_TYPE_LABELS, ORDER_STATUS_LABELS, STEP_TYPE_LABELS, FEED_TYPE_LABELS } from "@/types/fieldstack";
 import { OverviewTab } from "@/components/fieldstack/tabs/OverviewTab";
 import { FeedTab } from "@/components/fieldstack/tabs/FeedTab";
@@ -38,8 +38,9 @@ import { OrdersTab } from "@/components/fieldstack/tabs/OrdersTab";
 import { UploadTab } from "@/components/fieldstack/tabs/UploadTab";
 import { ChangesTab } from "@/components/fieldstack/tabs/ChangesTab";
 import { ProjectSettingsTab } from "@/components/fieldstack/tabs/ProjectSettingsTab";
+import { PendingChangesTab } from "@/components/fieldstack/tabs/PendingChangesTab";
 
-const TABS = ["Overview", "Feed", "Workflow", "Timeline", "Orders", "Upload", "Changes", "Settings"] as const;
+const TABS = ["Overview", "Feed", "Workflow", "Timeline", "Orders", "Upload", "Changes", "Pending", "Settings"] as const;
 type Tab = typeof TABS[number];
 
 function fmt(ts: Timestamp | undefined | null) {
@@ -62,6 +63,20 @@ export default function ProjectDetail() {
   const [uploadResult, setUploadResult] = useState<{ tasksCreated: number; orderItemsCreated: number; version: number } | null>(null);
   const [uploadError, setUploadError] = useState("");
   const dragCounter = useRef(0);
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+
+  const loadPendingChanges = useCallback(() => {
+    if (!id) return;
+    apiGetPendingChanges(id)
+      .then((data) => setPendingChanges(data as PendingChange[]))
+      .catch(() => {});
+  }, [id]);
+
+  useEffect(() => { loadPendingChanges(); }, [loadPendingChanges]);
+
+  const openPendingCount = pendingChanges.filter(
+    (c) => c.status === "PENDING" || c.status === "CONFLICT"
+  ).length;
 
   async function handleFileDrop(f: File) {
     if (!id) return;
@@ -259,6 +274,11 @@ export default function ProjectDetail() {
                   {criticalAlerts.length}
                 </span>
               )}
+              {t === "Pending" && openPendingCount > 0 && (
+                <span className="ml-1.5 bg-amber-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">
+                  {openPendingCount}
+                </span>
+              )}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -306,6 +326,14 @@ export default function ProjectDetail() {
 
         <TabsContent value="Changes">
           <ChangesTab changes={changes} />
+        </TabsContent>
+
+        <TabsContent value="Pending">
+          <PendingChangesTab
+            projectId={id!}
+            changes={pendingChanges}
+            onRefresh={loadPendingChanges}
+          />
         </TabsContent>
 
         <TabsContent value="Settings">

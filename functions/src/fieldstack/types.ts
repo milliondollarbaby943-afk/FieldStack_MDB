@@ -11,6 +11,7 @@
  *   companies/{companyId}/projects/{projectId}/scheduleChanges/{changeId}
  *   companies/{companyId}/projects/{projectId}/taskSteps/{stepId}
  *   companies/{companyId}/projects/{projectId}/feedEntries/{entryId}
+ *   companies/{companyId}/projects/{projectId}/pendingChanges/{changeId}
  *   companies/{companyId}/teamMembers/{memberId}
  *   companies/{companyId}/leadTimeSettings/{settingId}
  *   companies/{companyId}/chatMessages/{messageId}
@@ -32,6 +33,7 @@ export const COLLECTIONS = {
   leadTimeSettings: (companyId: string) => `companies/${companyId}/leadTimeSettings`,
   chatMessages: (companyId: string) => `companies/${companyId}/chatMessages`,
   gmailConnection: (companyId: string) => `companies/${companyId}/gmailConnection`,
+  pendingChanges: (companyId: string, projectId: string) => `companies/${companyId}/projects/${projectId}/pendingChanges`,
 } as const;
 
 export type ProjectStatus = "ACTIVE" | "ON_HOLD" | "COMPLETE";

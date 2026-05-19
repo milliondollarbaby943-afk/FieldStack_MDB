@@ -16,6 +16,7 @@ export type OrderStatus = "NOT_ORDERED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED"
 export type TeamRole = "OWNER" | "SUPERVISOR" | "PURCHASING" | "INSTALLER" | "DRAFTING";
 export type StepType = "SHOP_DRAWINGS" | "SUBMISSIONS" | "ORDER_MATERIALS" | "CONFIRM_DELIVERY" | "INSTALL" | "PUNCH_LIST";
 export type StepStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "BLOCKED";
+export type PendingChangeStatus = "PENDING" | "APPROVED" | "REJECTED" | "CONFLICT";
 export type StepTrack = "CONTRACT" | "SCHEDULE";
 export type EscalationLevel = "REMINDER" | "OVERDUE" | "CRITICAL";
 export type CompanyPlan = "FREE" | "PRO" | "ENTERPRISE";
@@ -150,6 +151,29 @@ export interface OrderItem {
   building?: string | null;
   floor?: string | null;
   gcInstallDate?: Timestamp;
+}
+
+// ─── PendingChange ────────────────────────────────────────────────────────────
+
+export interface PendingChange {
+  id: string;
+  projectId: string;
+  companyId: string;
+  taskId: string;
+  requestedBy: string;
+  requestedByName?: string | null;
+  requestedDate: Timestamp;
+  originalDate: Timestamp;
+  notes?: string | null;
+  status: PendingChangeStatus;
+  reviewedBy?: string | null;
+  reviewedAt?: Timestamp | null;
+  rejectionReason?: string | null;
+  taskName?: string | null;
+  building?: string | null;
+  floor?: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 // ─── ScheduleChange ───────────────────────────────────────────────────────────
