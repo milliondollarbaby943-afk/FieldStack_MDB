@@ -72,7 +72,11 @@ export const escalationApi = functions.https.onRequest((req, res) => {
       replyUnauthorized(res); return;
     }
 
-    const result = await runEscalationForCompany(companyId);
+    const companySnap = await db.collection("companies").doc(companyId).get();
+    const isSub = companySnap.data()?.companyType === "SUB";
+    const result = isSub
+      ? await runSubEscalationForSub(companyId)
+      : await runEscalationForCompany(companyId);
     res.json(result);
   });
 });
@@ -93,7 +97,12 @@ async function runEscalationForAllCompanies(): Promise<void> {
   const companiesSnap = await db.collection("companies").get();
   for (const companyDoc of companiesSnap.docs) {
     try {
-      await runEscalationForCompany(companyDoc.id);
+      const company = companyDoc.data();
+      if (company.companyType === "SUB") {
+        await runSubEscalationForSub(companyDoc.id);
+      } else {
+        await runEscalationForCompany(companyDoc.id);
+      }
     } catch (err) {
       logger.error("escalation failed for company", { companyId: companyDoc.id, error: String(err) });
     }
@@ -130,20 +139,8 @@ async function runEscalationForCompany(companyId: string): Promise<{
     const dueDate = step.dueDate.toDate ? step.dueDate.toDate() : new Date(step.dueDate);
     const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-    // Check last escalation
-    const escalationsSnap = await db
-      .collectionGroup("escalationLogs")
-      .where("taskStepId", "==", step.id)
-      .orderBy("sentAt", "desc")
-      .limit(1)
-      .get();
-
-    const lastEscalation = escalationsSnap.docs[0]?.data();
-    const alreadySentToday =
-      lastEscalation &&
-      lastEscalation.sentAt.toDate().toDateString() === now.toDateString();
-
-    if (alreadySentToday) continue;
+    const history = await getEscalationHistory(step.id, "GC", now);
+    if (history.sentToday) continue;
 
     // Get assignee
     const assignee = teamMembers.find((m) => m.id === step.assignedToId);
@@ -168,29 +165,29 @@ async function runEscalationForCompany(companyId: string): Promise<{
     };
 
     // CRITICAL: 2+ days overdue → escalate to owner
-    if (daysUntilDue <= -2 && lastEscalation?.level !== "CRITICAL") {
+    if (daysUntilDue <= -2 && history.lastLevel !== "CRITICAL") {
       if (owner) {
         emailParams.level = "CRITICAL";
         await sendEscalationEmail({ ...emailParams, to: owner.email });
-        await logEscalation(companyId, step.id, "CRITICAL", owner.email);
+        await logEscalation(companyId, step.id, "CRITICAL", owner.email, "GC");
         critical++;
       }
     }
     // OVERDUE: past due → escalate to supervisor + assignee
-    else if (daysUntilDue < 0 && lastEscalation?.level !== "OVERDUE") {
+    else if (daysUntilDue < 0 && history.lastLevel !== "OVERDUE") {
       emailParams.level = "OVERDUE";
       const recipients = [assignee.email, ...supervisors.map((s) => s.email)];
       for (const email of [...new Set(recipients)]) {
         await sendEscalationEmail({ ...emailParams, to: email });
       }
-      await logEscalation(companyId, step.id, "OVERDUE", assignee.email);
+      await logEscalation(companyId, step.id, "OVERDUE", assignee.email, "GC");
       overdue++;
     }
     // REMINDER: due within 3 days → remind assignee
-    else if (daysUntilDue <= 3 && daysUntilDue >= 0 && !lastEscalation) {
+    else if (daysUntilDue <= 3 && daysUntilDue >= 0 && !history.lastLevel) {
       emailParams.level = "REMINDER";
       await sendEscalationEmail({ ...emailParams, to: assignee.email });
-      await logEscalation(companyId, step.id, "REMINDER", assignee.email);
+      await logEscalation(companyId, step.id, "REMINDER", assignee.email, "GC");
       reminders++;
     }
   }
@@ -226,11 +223,35 @@ async function sendEscalationEmail(params: {
   }
 }
 
+async function getEscalationHistory(
+  taskStepId: string,
+  recipientType: "GC" | "SUB",
+  now: Date
+): Promise<{ sentToday: boolean; lastLevel?: string }> {
+  const snap = await db
+    .collection("escalationLogs")
+    .where("taskStepId", "==", taskStepId)
+    .orderBy("sentAt", "desc")
+    .limit(10)
+    .get();
+
+  const relevant = snap.docs
+    .map((d) => d.data())
+    .filter((log) => (log.recipientType ?? "GC") === recipientType);
+
+  if (relevant.length === 0) return { sentToday: false };
+
+  const last = relevant[0];
+  const sentToday = last.sentAt.toDate().toDateString() === now.toDateString();
+  return { sentToday, lastLevel: last.level as string };
+}
+
 async function logEscalation(
   companyId: string,
   taskStepId: string,
   level: string,
-  sentTo: string
+  sentTo: string,
+  recipientType: "GC" | "SUB" = "GC"
 ): Promise<void> {
   const ref = db.collection("escalationLogs").doc();
   await ref.set({
@@ -239,8 +260,101 @@ async function logEscalation(
     taskStepId,
     level,
     sentTo,
+    recipientType,
     sentAt: FieldValue.serverTimestamp(),
   });
+}
+
+async function runSubEscalationForSub(subCompanyId: string): Promise<{
+  reminders: number;
+  overdue: number;
+  critical: number;
+}> {
+  const now = new Date();
+  let reminders = 0;
+  let overdue = 0;
+  let critical = 0;
+
+  const stepsSnap = await db
+    .collectionGroup("taskSteps")
+    .where("assignedSubCompanyId", "==", subCompanyId)
+    .where("status", "!=", "COMPLETE")
+    .get();
+
+  const teamSnap = await db.collection(COLLECTIONS.teamMembers(subCompanyId)).get();
+  const teamMembers = teamSnap.docs.map((d) => d.data());
+  const owner = teamMembers.find((m) => m.role === "OWNER");
+  const supervisors = teamMembers.filter((m) => m.role === "SUPERVISOR");
+
+  if (!owner && supervisors.length === 0) {
+    logger.info("sub escalation skipped: no owner or supervisors", { subCompanyId });
+    return { reminders: 0, overdue: 0, critical: 0 };
+  }
+
+  for (const stepDoc of stepsSnap.docs) {
+    const step = stepDoc.data();
+    if (!step.dueDate) continue;
+
+    const dueDate = step.dueDate.toDate ? step.dueDate.toDate() : new Date(step.dueDate);
+    const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    const history = await getEscalationHistory(step.id, "SUB", now);
+    if (history.sentToday) continue;
+
+    const stepLabel = STEP_LABELS[step.stepType] ?? step.stepType;
+    const location = [step.building, step.floor].filter(Boolean).join(" / ") || "General";
+
+    // Magic link uses gcCompanyId — step.companyId is always the GC's companyId
+    const magicToken = createMagicToken({ stepId: step.id, action: "complete", companyId: step.companyId });
+    const magicUrl = buildMagicUrl(magicToken);
+
+    const primaryName = owner?.name ?? supervisors[0]?.name ?? "Team";
+    const emailParams = {
+      level: "",
+      stepLabel,
+      location,
+      projectName: step.projectName ?? "Project",
+      assigneeName: primaryName,
+      daysOverdue: Math.abs(daysUntilDue),
+      dueInDays: daysUntilDue,
+      projectId: step.projectId,
+      magicUrl,
+    };
+
+    if (daysUntilDue <= -2 && history.lastLevel !== "CRITICAL") {
+      if (owner) {
+        emailParams.level = "CRITICAL";
+        await sendEscalationEmail({ ...emailParams, to: owner.email });
+        await logEscalation(subCompanyId, step.id, "CRITICAL", owner.email, "SUB");
+        critical++;
+      }
+    } else if (daysUntilDue < 0 && history.lastLevel !== "OVERDUE") {
+      emailParams.level = "OVERDUE";
+      const recipients: string[] = [];
+      if (owner) recipients.push(owner.email);
+      for (const s of supervisors) recipients.push(s.email);
+      for (const email of [...new Set(recipients)]) {
+        await sendEscalationEmail({ ...emailParams, to: email });
+      }
+      const logTarget = owner?.email ?? supervisors[0].email;
+      await logEscalation(subCompanyId, step.id, "OVERDUE", logTarget, "SUB");
+      overdue++;
+    } else if (daysUntilDue <= 3 && daysUntilDue >= 0 && !history.lastLevel) {
+      emailParams.level = "REMINDER";
+      const recipients: string[] = [];
+      if (owner) recipients.push(owner.email);
+      for (const s of supervisors) recipients.push(s.email);
+      for (const email of [...new Set(recipients)]) {
+        await sendEscalationEmail({ ...emailParams, to: email });
+      }
+      const logTarget = owner?.email ?? supervisors[0].email;
+      await logEscalation(subCompanyId, step.id, "REMINDER", logTarget, "SUB");
+      reminders++;
+    }
+  }
+
+  logger.info("sub escalation complete", { subCompanyId, reminders, overdue, critical });
+  return { reminders, overdue, critical };
 }
 
 // ─── Weekly digest ────────────────────────────────────────────────────────────

@@ -45,6 +45,7 @@ const gcNavItems = [
 const subNavItems = [
   { title: "My Projects", url: "/", icon: HardHat },
   { title: "My Tasks", url: "/my-tasks", icon: CheckSquare },
+  { title: "Team", url: "/team", icon: Users },
 ];
 
 const accountItems = [

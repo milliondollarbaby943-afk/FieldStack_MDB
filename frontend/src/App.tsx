@@ -57,7 +57,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={isSub ? <SubDashboardPage /> : <Dashboard />} />
           {!isSub && <Route path="/projects/:id" element={<ProjectDetail />} />}
-          {!isSub && <Route path="/team" element={<TeamPage />} />}
+          <Route path="/team" element={<TeamPage />} />
           <Route path="/my-tasks" element={<MyTasksPage />} />
           <Route path="/settings" element={<FieldStackSettings />} />
           <Route path="/billing" element={<Billing />} />
