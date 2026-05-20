@@ -135,6 +135,7 @@ export async function createCompanyWithMember(params: {
   name: string;
   companyName: string;
   companySlug: string;
+  companyType?: "GC" | "SUB";
 }): Promise<string> {
   const companyRef = doc(collection(firestore, "companies"));
   const companyId = companyRef.id;
@@ -145,6 +146,7 @@ export async function createCompanyWithMember(params: {
     id: companyId,
     name: params.companyName,
     slug: params.companySlug,
+    companyType: params.companyType ?? "GC",
     plan: "FREE",
     stripeCustomerId: null,
     stripeSubId: null,

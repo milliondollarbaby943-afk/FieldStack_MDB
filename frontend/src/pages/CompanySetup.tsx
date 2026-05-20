@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2, HardHat, Building2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { createCompanyWithMember } from "@/contexts/CompanyContext";
@@ -25,6 +26,7 @@ export default function CompanySetup() {
   const { user, profile } = useAuth();
   const [companyName, setCompanyName] = useState("");
   const [yourName, setYourName] = useState(profile?.displayName ?? user?.displayName ?? "");
+  const [companyType, setCompanyType] = useState<"GC" | "SUB">("GC");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -40,6 +42,7 @@ export default function CompanySetup() {
         name: yourName.trim(),
         companyName: companyName.trim(),
         companySlug: slugify(companyName),
+        companyType,
       });
       toast.success("Company created! Welcome to FieldStack.");
     } catch (err) {
@@ -69,6 +72,41 @@ export default function CompanySetup() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Company type selector */}
+              <div className="space-y-1.5">
+                <Label>Company type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCompanyType("GC")}
+                    className={cn(
+                      "flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-sm transition-colors",
+                      companyType === "GC"
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border text-muted-foreground hover:border-primary/50"
+                    )}
+                  >
+                    <Building2 className="h-5 w-5" />
+                    <div className="font-medium">General Contractor</div>
+                    <div className="text-[11px] text-center leading-tight">Upload schedules, manage all trades</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompanyType("SUB")}
+                    className={cn(
+                      "flex flex-col items-center gap-2 rounded-lg border-2 p-4 text-sm transition-colors",
+                      companyType === "SUB"
+                        ? "border-primary bg-primary/5 text-foreground"
+                        : "border-border text-muted-foreground hover:border-primary/50"
+                    )}
+                  >
+                    <HardHat className="h-5 w-5" />
+                    <div className="font-medium">Subcontractor</div>
+                    <div className="text-[11px] text-center leading-tight">View assigned tasks, update progress</div>
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="yourName">Your name</Label>
                 <Input
@@ -86,7 +124,7 @@ export default function CompanySetup() {
                   id="companyName"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Acme Cabinets & Countertops"
+                  placeholder={companyType === "GC" ? "Acme Construction" : "CKF Cabinetry"}
                   required
                 />
                 {companyName && (
