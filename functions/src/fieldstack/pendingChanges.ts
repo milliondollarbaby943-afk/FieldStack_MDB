@@ -40,11 +40,13 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
     let companyId: string;
     let uid: string;
     let userRole: string;
+    let requestedByEmail: string | null = null;
     try {
       const auth = await verifyCompanyMember(req);
       companyId = auth.companyId;
       uid = auth.decoded.uid;
       userRole = auth.role;
+      requestedByEmail = auth.decoded.email ?? null;
     } catch {
       replyUnauthorized(res); return;
     }
@@ -167,23 +169,32 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
 
     // ── POST — Sub requests a date change ─────────────────────────────────────
     if (req.method === "POST") {
-      const { projectId, taskId, requestedDate, notes, requestedByName } = req.body ?? {};
+      const { projectId, taskId, requestedDate, notes, requestedByName, gcCompanyId } = req.body ?? {};
       if (!projectId || !taskId || !requestedDate) {
         replyBadRequest(res, "projectId, taskId, and requestedDate are required."); return;
       }
+      if (!gcCompanyId) {
+        replyBadRequest(res, "gcCompanyId is required."); return;
+      }
 
-      // Fetch the task to get the original date and denormalized fields
-      const taskRef = db.doc(`${COLLECTIONS.tasks(companyId, projectId)}/${taskId}`);
+      // Tasks live under the GC's Firestore path, not the sub's
+      const taskRef = db.doc(`${COLLECTIONS.tasks(gcCompanyId, projectId)}/${taskId}`);
       const taskSnap = await taskRef.get();
-      if (!taskSnap.exists || taskSnap.data()?.companyId !== companyId) {
+      if (!taskSnap.exists || taskSnap.data()?.companyId !== gcCompanyId) {
         replyNotFound(res, "Task not found."); return;
       }
       const task = taskSnap.data()!;
 
+      // Verify the requesting sub is actually assigned to this task
+      if (task.assignedSubCompanyId !== companyId) {
+        replyNotFound(res, "Task not found."); return;
+      }
+
       const originalDate = task.gcInstallDate as Timestamp;
       const newDate = Timestamp.fromDate(new Date(requestedDate));
 
-      const col = `${COLLECTIONS.projects(companyId)}/${projectId}/pendingChanges`;
+      // pendingChanges stored under GC's project path so GC approve/reject can find them
+      const col = `${COLLECTIONS.projects(gcCompanyId)}/${projectId}/pendingChanges`;
 
       // Check for existing PENDING or CONFLICT changes on the same task
       const existingSnap = await db
@@ -214,10 +225,12 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
       batch.set(ref, {
         id: ref.id,
         projectId,
-        companyId,
+        companyId: gcCompanyId,    // GC's companyId so GC's approve/reject queries match
+        subCompanyId: companyId,   // which sub submitted this request
         taskId,
         requestedBy: uid,
         requestedByName: requestedByName ? sanitizeString(requestedByName) : null,
+        requestedByEmail,          // denormalized for approve/reject notification emails
         requestedDate: newDate,
         originalDate,
         notes: notes ? sanitizeString(notes) : null,
@@ -246,7 +259,7 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
       }
 
       await batch.commit();
-      logger.info("pendingChange created", { companyId, projectId, taskId, isConflict });
+      logger.info("pendingChange created", { subCompanyId: companyId, gcCompanyId, projectId, taskId, isConflict });
       res.json({ id: ref.id }); return;
     }
 

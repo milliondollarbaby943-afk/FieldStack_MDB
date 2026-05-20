@@ -23,7 +23,7 @@ import { Resend } from "resend";
 import { verifyCompanyMember, replyUnauthorized, replyBadRequest } from "./middleware";
 import { COLLECTIONS, DEFAULT_LEAD_TIMES, type ItemType, type TaskCategory } from "./types";
 import { createMessage } from "./anthropic";
-import { buildScheduleChangeEmailHtml } from "./emailTemplates";
+import { buildScheduleChangeEmailHtml, type ScheduleChangeItem } from "./emailTemplates";
 import { logger } from "../logger";
 
 const db = admin.firestore();
@@ -725,14 +725,24 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
             .orderBy("detectedAt", "desc")
             .limit(50)
             .get();
-          const recentChanges = changesSnap.docs.map((d) => d.data());
+          const recentChanges: ScheduleChangeItem[] = changesSnap.docs.map((d) => {
+            const c = d.data();
+            return {
+              taskName: c.taskName ?? "",
+              building: c.building ?? null,
+              floor: c.floor ?? null,
+              previousDate: c.previousDate?.toDate?.() ?? new Date(),
+              newDate: c.newDate?.toDate?.() ?? new Date(),
+              shiftDays: c.shiftDays ?? 0,
+            };
+          });
 
           for (const member of recipients) {
             await resend.emails.send({
               from: FROM,
               to: member.email,
               subject: `Schedule updated: ${projectName} — ${result.changesDetected} change${result.changesDetected !== 1 ? "s" : ""}`,
-              html: buildScheduleChangeEmailHtml(recentChanges as any, projectName),
+              html: buildScheduleChangeEmailHtml(recentChanges, projectName),
             });
           }
           logger.info("schedules/upload: change notifications sent", { companyId, recipients: recipients.length });
