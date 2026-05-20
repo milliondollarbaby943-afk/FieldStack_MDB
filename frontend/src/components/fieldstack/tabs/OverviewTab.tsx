@@ -8,6 +8,7 @@ import { Timestamp } from "firebase/firestore";
 import { format, differenceInDays } from "date-fns";
 import { apiSendAlerts, apiSendAlertToMember } from "@/lib/fieldstackApi";
 import { alertColor } from "@/lib/alerts";
+import { useCompany } from "@/contexts/CompanyContext";
 import type { Alert, Task, ScheduleChange, TeamMember } from "@/types/fieldstack";
 
 function fmt(ts: Timestamp | undefined | null) {
@@ -23,6 +24,7 @@ interface Props {
   alerts: Alert[];
   criticalAlerts: Alert[];
   warningAlerts: Alert[];
+  tasks: Task[];
   ourTasks: Task[];
   changes: ScheduleChange[];
   projectId: string;
@@ -32,12 +34,16 @@ interface Props {
   uploading: boolean;
 }
 
-export function OverviewTab({ alerts, criticalAlerts, warningAlerts, ourTasks, changes, projectId, team, hasTasks, onFilePicked, uploading }: Props) {
+export function OverviewTab({ alerts, criticalAlerts, warningAlerts, tasks, ourTasks, changes, projectId, team, hasTasks, onFilePicked, uploading }: Props) {
+  const { company } = useCompany();
+  const isGc = company?.companyType === "GC";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ alerts: number; changes: number; resendConfigured: boolean } | null>(null);
 
-  const nextInstall = [...ourTasks].sort((a, b) => {
+  // GCs see next install from any trade; subs see from their own tasks only
+  const installPool = isGc ? tasks : ourTasks;
+  const nextInstall = [...installPool].sort((a, b) => {
     const aDate = a.gcInstallDate instanceof Timestamp ? a.gcInstallDate.toMillis() : 0;
     const bDate = b.gcInstallDate instanceof Timestamp ? b.gcInstallDate.toMillis() : 0;
     return aDate - bDate;
@@ -109,7 +115,15 @@ export function OverviewTab({ alerts, criticalAlerts, warningAlerts, ourTasks, c
       {/* Stats */}
       {hasTasks && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MiniStat label="Cab + CT Tasks" value={ourTasks.length} sub="Cabinet + countertop" />
+          {isGc ? (
+            <MiniStat
+              label="Schedule Tasks"
+              value={tasks.length}
+              sub={ourTasks.length > 0 ? `Cab/CT: ${ourTasks.length}` : "All trades"}
+            />
+          ) : (
+            <MiniStat label="Cab + CT Tasks" value={ourTasks.length} sub="Cabinet + countertop" />
+          )}
           <MiniStat label="Critical" value={criticalAlerts.length} color={criticalAlerts.length > 0 ? "text-red-500" : "text-emerald-500"} sub="Past order-by date" />
           <MiniStat label="Warnings" value={warningAlerts.length} color={warningAlerts.length > 0 ? "text-yellow-500" : "text-emerald-500"} sub="Due within 14 days" />
           <MiniStat label="Next Install" value={nextInstall ? fmtShort(nextInstall.gcInstallDate) : "—"} sub={nextInstall?.taskName ?? "No tasks"} />

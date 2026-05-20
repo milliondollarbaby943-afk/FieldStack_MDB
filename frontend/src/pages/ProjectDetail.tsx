@@ -289,6 +289,7 @@ export default function ProjectDetail() {
             alerts={alerts}
             criticalAlerts={criticalAlerts}
             warningAlerts={warningAlerts}
+            tasks={tasks}
             ourTasks={ourTasks}
             changes={changes}
             projectId={id!}
