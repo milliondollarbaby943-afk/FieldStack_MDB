@@ -820,6 +820,8 @@ export {
   procoreAuthUrlApi,
 } from "./fieldstack/settings";
 export { stepsApi } from "./fieldstack/steps";
+export { tasksApi, tasksBulkEditApi } from "./fieldstack/tasks";
+export { tasksCsvUpdateApi } from "./fieldstack/tasksCsvUpdate";
 export { magicLinkApi } from "./fieldstack/magicLink";
 export { gcUploadLinkApi } from "./fieldstack/gcUploadLink";
 export { escalationApi, escalationCron, digestCron } from "./fieldstack/escalation";

@@ -331,6 +331,7 @@ async function saveParsedTasks(
       assignedResource: t.assignedResource ?? null,
       category,
       isOurTask: t.isOurTask,
+      status: "OPEN",
       createdAt: FieldValue.serverTimestamp(),
     };
 

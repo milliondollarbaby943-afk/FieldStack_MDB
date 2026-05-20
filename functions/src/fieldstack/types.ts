@@ -45,6 +45,7 @@ export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" |
 export type TaskCategory = "CABINET_DELIVERY" | "CABINET_INSTALL" | "COUNTERTOP_SET" | "OTHER";
 export type StepType = "SHOP_DRAWINGS" | "SUBMISSIONS" | "ORDER_MATERIALS" | "CONFIRM_DELIVERY" | "INSTALL" | "PUNCH_LIST";
 export type StepStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "BLOCKED";
+export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
 export type TeamRole = "OWNER" | "SUPERVISOR" | "PURCHASING" | "INSTALLER" | "DRAFTING";
 export type UserRole = "ADMIN" | "MEMBER" | "VIEWER";
 

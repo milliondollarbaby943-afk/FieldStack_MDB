@@ -16,6 +16,7 @@ export type OrderStatus = "NOT_ORDERED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED"
 export type TeamRole = "OWNER" | "SUPERVISOR" | "PURCHASING" | "INSTALLER" | "DRAFTING";
 export type StepType = "SHOP_DRAWINGS" | "SUBMISSIONS" | "ORDER_MATERIALS" | "CONFIRM_DELIVERY" | "INSTALL" | "PUNCH_LIST";
 export type StepStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "BLOCKED";
+export type TaskStatus = "OPEN" | "IN_PROGRESS" | "CLOSED";
 export type PendingChangeStatus = "PENDING" | "APPROVED" | "REJECTED" | "CONFLICT";
 export type StepTrack = "CONTRACT" | "SCHEDULE";
 export type EscalationLevel = "REMINDER" | "OVERDUE" | "CRITICAL";
@@ -126,6 +127,7 @@ export interface Task {
   assignedSubCompanyId?: string | null;
   category: TaskCategory;
   isOurTask: boolean;
+  status?: TaskStatus;
   createdAt: Timestamp;
 }
 

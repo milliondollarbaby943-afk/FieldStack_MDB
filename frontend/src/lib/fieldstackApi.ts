@@ -43,6 +43,9 @@ const FUNCTION_PATHS: Record<string, string> = {
   procoreSyncApi:         "/api/procore/sync",
   procoreCallbackApi:     "/api/procore/callback",
   stepsApi:               "/api/steps",
+  tasksApi:               "/api/tasks",
+  tasksBulkEditApi:       "/api/tasks/bulk-edit",
+  tasksCsvUpdateApi:      "/api/tasks/csv-update",
   magicLinkApi:           "/api/magic-link",
   gcUploadLinkApi:        "/api/gc-upload-link",
   escalationApi:          "/api/alerts/escalate",
@@ -401,6 +404,56 @@ export async function apiGetInviteInfo(inviteToken: string): Promise<{
 
 export async function apiAcceptInvite(token: string): Promise<{ gcProjectId: string; gcCompanyId: string }> {
   return callFunction("inviteAcceptApi", "", { method: "POST", body: JSON.stringify({ token }) });
+}
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+
+export async function apiUpdateTask(
+  projectId: string,
+  taskId: string,
+  data: Partial<{ status: string; gcInstallDate: string; gcInstallDateEnd: string; assignedResource: string }>
+): Promise<void> {
+  return callFunction("tasksApi", `/${projectId}/${taskId}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function apiBulkEditTasks(
+  projectId: string,
+  instruction: string,
+  apply: boolean
+): Promise<{
+  changes: Array<{ taskId: string; taskName: string; field: string; oldValue: string; newValue: string }>;
+  applied: boolean;
+  updatedCount?: number;
+}> {
+  return callFunction("tasksBulkEditApi", "", {
+    method: "POST",
+    body: JSON.stringify({ projectId, instruction, apply }),
+  });
+}
+
+export async function apiUploadTaskCsv(
+  projectId: string,
+  file: File
+): Promise<{ updated: number; unmatched: string[] }> {
+  const token = await getAuthToken();
+  if (!token) throw new ApiError("You must be signed in.", 401, false);
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("projectId", projectId);
+
+  const res = await fetch(apiPath("tasksCsvUpdateApi"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new ApiError(body?.error ?? `Upload failed (${res.status})`, res.status, res.status >= 500);
+  }
+
+  return res.json();
 }
 
 // ─── GC Upload Link ───────────────────────────────────────────────────────────

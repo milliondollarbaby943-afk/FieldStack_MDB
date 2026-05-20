@@ -203,6 +203,18 @@
           "function": "stepsApi"
         },
         {
+          "source": "/api/tasks/bulk-edit",
+          "function": "tasksBulkEditApi"
+        },
+        {
+          "source": "/api/tasks/csv-update",
+          "function": "tasksCsvUpdateApi"
+        },
+        {
+          "source": "/api/tasks/**",
+          "function": "tasksApi"
+        },
+        {
           "source": "/api/magic-link",
           "function": "magicLinkApi"
         },

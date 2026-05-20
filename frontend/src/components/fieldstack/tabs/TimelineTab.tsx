@@ -21,13 +21,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import { Loader2 } from "lucide-react";
 import { Timestamp, doc, updateDoc } from "firebase/firestore";
 import { format, formatDistanceToNow } from "date-fns";
 import { ChevronDown, Users, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { firestore } from "@/lib/firebase";
 import { useCompany } from "@/contexts/CompanyContext";
-import type { Task, TaskStep } from "@/types/fieldstack";
+import { apiUpdateTask } from "@/lib/fieldstackApi";
+import type { Task, TaskStep, TaskStatus } from "@/types/fieldstack";
 import { TASK_CATEGORY_LABELS } from "@/types/fieldstack";
 import type { ConnectedSub } from "@/hooks/useProjectConnections";
 
@@ -173,6 +175,8 @@ export function TimelineTab({
   const { company } = useCompany();
   const isGc = company?.companyType === "GC";
   const [filter, setFilter] = useState<"ours" | "all">("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatusSaving, setBulkStatusSaving] = useState(false);
   const [bulkGroupBy, setBulkGroupBy] = useState<
     "building" | "floor" | "category"
   >("building");
@@ -264,6 +268,46 @@ export function TimelineTab({
     }
   }
 
+  async function handleBulkStatusChange(status: TaskStatus) {
+    if (selectedIds.size === 0) return;
+    setBulkStatusSaving(true);
+    let updated = 0;
+    let failed = 0;
+    for (const taskId of selectedIds) {
+      try {
+        await apiUpdateTask(projectId, taskId, { status });
+        updated++;
+      } catch {
+        failed++;
+      }
+    }
+    setBulkStatusSaving(false);
+    setSelectedIds(new Set());
+    if (failed === 0) {
+      toast.success(`Marked ${updated} task${updated !== 1 ? "s" : ""} ${status === "IN_PROGRESS" ? "In Progress" : status === "CLOSED" ? "Closed" : "Open"}.`);
+    } else {
+      toast.error(`${failed} task${failed !== 1 ? "s" : ""} failed to update.`);
+    }
+  }
+
+  const allDisplayedSelected = displayed.length > 0 && displayed.every((t) => selectedIds.has(t.id));
+
+  function toggleSelectAll() {
+    if (allDisplayedSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayed.map((t) => t.id)));
+    }
+  }
+
+  function toggleSelect(taskId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }
+
   if (tasks.length === 0) {
     return (
       <Card>
@@ -295,6 +339,34 @@ export function TimelineTab({
           </TabsList>
         </Tabs>
       </div>
+
+      {/* GC bulk status action bar */}
+      {isGc && selectedIds.size > 0 && (
+        <Card className="border-blue-400/30 bg-blue-500/5">
+          <CardContent className="py-2 px-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-medium">{selectedIds.size} selected</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkStatusSaving} onClick={() => handleBulkStatusChange("OPEN")}>
+                  {bulkStatusSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : null} Open
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-blue-600 border-blue-400/40" disabled={bulkStatusSaving} onClick={() => handleBulkStatusChange("IN_PROGRESS")}>
+                  In Progress
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-emerald-600 border-emerald-400/40" disabled={bulkStatusSaving} onClick={() => handleBulkStatusChange("CLOSED")}>
+                  Close
+                </Button>
+              </div>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground ml-auto"
+              >
+                Clear
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Per-building/floor progress rollup */}
       {rollupEntries.length > 0 && (
@@ -421,6 +493,18 @@ export function TimelineTab({
         </Card>
       )}
 
+      {isGc && displayed.length > 0 && (
+        <div className="flex items-center gap-2 px-1">
+          <input
+            type="checkbox"
+            checked={allDisplayedSelected}
+            onChange={toggleSelectAll}
+            className="h-3.5 w-3.5 accent-primary cursor-pointer"
+          />
+          <span className="text-xs text-muted-foreground">Select all ({displayed.length})</span>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2 mt-1">
         {displayed.map((t) => {
           const subName =
@@ -431,13 +515,23 @@ export function TimelineTab({
           const prog = computeProgress(t.id, steps);
           const hasProgress = prog.total > 0 && t.assignedSubCompanyId;
           const pct = prog.total > 0 ? Math.round((prog.complete / prog.total) * 100) : 0;
+          const isSelected = selectedIds.has(t.id);
 
           return (
-            <Card key={t.id}>
+            <Card key={t.id} className={isSelected ? "ring-1 ring-blue-400/50" : ""}>
               <CardContent className="py-3 px-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {isGc && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(t.id)}
+                          className="h-3.5 w-3.5 accent-primary cursor-pointer shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
                       {prog.isActive && (
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                       )}
@@ -499,6 +593,14 @@ export function TimelineTab({
                     <Badge variant="outline" className="text-[10px]">
                       {TASK_CATEGORY_LABELS[t.category] ?? t.category}
                     </Badge>
+                    {t.status && t.status !== "OPEN" && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${t.status === "IN_PROGRESS" ? "text-blue-600 border-blue-400/40" : "text-emerald-600 border-emerald-400/40"}`}
+                      >
+                        {t.status === "IN_PROGRESS" ? "In Progress" : "Closed"}
+                      </Badge>
+                    )}
                     {connectedSubs.length > 0 && (
                       <AssignButton
                         task={t}
