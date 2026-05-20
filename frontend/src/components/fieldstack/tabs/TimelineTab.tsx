@@ -169,7 +169,7 @@ export function TimelineTab({
   projectId,
   connectedSubs,
 }: Props) {
-  const [filter, setFilter] = useState<"ours" | "all">("ours");
+  const [filter, setFilter] = useState<"ours" | "all">("all");
   const [bulkGroupBy, setBulkGroupBy] = useState<
     "building" | "floor" | "category"
   >("building");

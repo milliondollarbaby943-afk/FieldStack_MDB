@@ -109,7 +109,7 @@ export function OverviewTab({ alerts, criticalAlerts, warningAlerts, ourTasks, c
       {/* Stats */}
       {hasTasks && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MiniStat label="Our Tasks" value={ourTasks.length} sub="Cabinet + countertop" />
+          <MiniStat label="Cab + CT Tasks" value={ourTasks.length} sub="Cabinet + countertop" />
           <MiniStat label="Critical" value={criticalAlerts.length} color={criticalAlerts.length > 0 ? "text-red-500" : "text-emerald-500"} sub="Past order-by date" />
           <MiniStat label="Warnings" value={warningAlerts.length} color={warningAlerts.length > 0 ? "text-yellow-500" : "text-emerald-500"} sub="Due within 14 days" />
           <MiniStat label="Next Install" value={nextInstall ? fmtShort(nextInstall.gcInstallDate) : "—"} sub={nextInstall?.taskName ?? "No tasks"} />
