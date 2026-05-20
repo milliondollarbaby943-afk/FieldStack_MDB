@@ -190,8 +190,12 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
         replyNotFound(res, "Task not found."); return;
       }
 
+      const parsedDate = new Date(requestedDate);
+      if (isNaN(parsedDate.getTime())) {
+        replyBadRequest(res, "requestedDate must be a valid date string."); return;
+      }
       const originalDate = task.gcInstallDate as Timestamp;
-      const newDate = Timestamp.fromDate(new Date(requestedDate));
+      const newDate = Timestamp.fromDate(parsedDate);
 
       // pendingChanges stored under GC's project path so GC approve/reject can find them
       const col = `${COLLECTIONS.projects(gcCompanyId)}/${projectId}/pendingChanges`;
@@ -210,6 +214,7 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
         await myExisting.ref.update({
           requestedDate: newDate,
           notes: notes ? sanitizeString(notes) : null,
+          requestedByEmail,
           updatedAt: FieldValue.serverTimestamp(),
         });
         res.json({ id: myExisting.id }); return;
