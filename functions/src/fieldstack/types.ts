@@ -41,7 +41,7 @@ export type CompanyType = "GC" | "SUB";
 export type ProjectConnectionStatus = "pending" | "active";
 export type CanEditBy = "GC" | "SUB" | "BOTH";
 export type OrderStatus = "NOT_ORDERED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
-export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE";
+export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE" | "TRADE_MATERIALS";
 export type TaskCategory = "CABINET_DELIVERY" | "CABINET_INSTALL" | "COUNTERTOP_SET" | "OTHER";
 export type StepType = "SHOP_DRAWINGS" | "SUBMISSIONS" | "ORDER_MATERIALS" | "CONFIRM_DELIVERY" | "INSTALL" | "PUNCH_LIST";
 export type StepStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "BLOCKED";
@@ -53,4 +53,5 @@ export const DEFAULT_LEAD_TIMES: Array<{ itemType: ItemType; label: string; lead
   { itemType: "CABINETS_CUSTOM", label: "Custom/Semi-Custom", leadTimeWeeks: 16 },
   { itemType: "COUNTERTOPS", label: "Fabricated", leadTimeWeeks: 3 },
   { itemType: "HARDWARE", label: "Standard", leadTimeWeeks: 4 },
+  { itemType: "TRADE_MATERIALS", label: "Standard", leadTimeWeeks: 4 },
 ];

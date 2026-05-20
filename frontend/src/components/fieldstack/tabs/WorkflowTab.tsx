@@ -104,13 +104,24 @@ interface Props {
 export function WorkflowTab({ projectId, steps, team }: Props) {
   void projectId;
 
-  // Group steps by building/floor
-  const groups: Record<string, TaskStep[]> = {};
+  // Group steps by taskId (one chain per task, unique per upload)
+  const groups = new Map<string, TaskStep[]>();
   for (const s of steps) {
-    const key = [s.building, s.floor].filter(Boolean).join(" / ") || "General";
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(s);
+    const key = s.taskId ?? ([s.building, s.floor].filter(Boolean).join("/") || "General");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(s);
   }
+
+  // Sort groups by building → floor → taskName for consistent ordering
+  const sortedGroups = Array.from(groups.entries()).sort(([, aSteps], [, bSteps]) => {
+    const a = aSteps[0];
+    const b = bSteps[0];
+    const buildingCmp = (a.building ?? "").localeCompare(b.building ?? "");
+    if (buildingCmp !== 0) return buildingCmp;
+    const floorCmp = (a.floor ?? "").localeCompare(b.floor ?? "");
+    if (floorCmp !== 0) return floorCmp;
+    return (a.taskName ?? "").localeCompare(b.taskName ?? "");
+  });
 
   if (steps.length === 0) {
     return (
@@ -129,33 +140,41 @@ export function WorkflowTab({ projectId, steps, team }: Props) {
       <div>
         <h3 className="text-sm font-semibold mb-1">Task Workflow</h3>
         <p className="text-xs text-muted-foreground">
-          6-step chain per building/floor: Shop Drawings → Submissions → Order → Confirm Delivery → Install → Punch List
+          6-step chain per task: Shop Drawings → Submissions → Order → Confirm Delivery → Install → Punch List
         </p>
       </div>
 
-      {Object.entries(groups).map(([groupKey, groupSteps]) => (
-        <Card key={groupKey}>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-mono">{groupKey}</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="divide-y">
-              {STEP_ORDER.map((stepType) => {
-                const step = groupSteps.find((s) => s.stepType === stepType);
-                if (!step) return null;
-                const assignee = team.find((m) => m.id === step.assignedToId);
-                return (
-                  <StepRow
-                    key={stepType}
-                    step={step}
-                    assigneeName={assignee?.name}
-                  />
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+      {sortedGroups.map(([groupKey, groupSteps]) => {
+        const rep = groupSteps[0];
+        const headerTitle = rep.taskName || [rep.building, rep.floor].filter(Boolean).join(" / ") || "General";
+        const subInfo = [rep.assignedResource, [rep.building, rep.floor].filter(Boolean).join(" / ")].filter(Boolean);
+        return (
+          <Card key={groupKey}>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="text-sm font-semibold">{headerTitle}</CardTitle>
+              {subInfo.length > 0 && (
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">{subInfo.join(" · ")}</p>
+              )}
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="divide-y">
+                {STEP_ORDER.map((stepType) => {
+                  const step = groupSteps.find((s) => s.stepType === stepType);
+                  if (!step) return null;
+                  const assignee = team.find((m) => m.id === step.assignedToId);
+                  return (
+                    <StepRow
+                      key={stepType}
+                      step={step}
+                      assigneeName={assignee?.name}
+                    />
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

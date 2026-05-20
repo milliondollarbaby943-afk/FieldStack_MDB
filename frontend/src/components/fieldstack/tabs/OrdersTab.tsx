@@ -104,7 +104,14 @@ function OrderRow({ item }: { item: OrderItem }) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-medium">{ITEM_TYPE_LABELS[item.itemType] ?? item.itemType}</span>
+              <span className="text-sm font-medium">
+                {item.itemType === "TRADE_MATERIALS" && item.taskName
+                  ? item.taskName
+                  : (ITEM_TYPE_LABELS[item.itemType] ?? item.itemType)}
+              </span>
+              {item.assignedResource && (
+                <Badge variant="secondary" className="text-[10px]">{item.assignedResource}</Badge>
+              )}
               {(item.building || item.floor) && (
                 <span className="text-xs text-muted-foreground font-mono">
                   {[item.building, item.floor].filter(Boolean).join(" – ")}

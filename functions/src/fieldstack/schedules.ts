@@ -284,6 +284,14 @@ async function saveParsedTasks(
   const projectDoc = await db.doc(`${COLLECTIONS.projects(companyId)}/${projectId}`).get();
   const projectName = projectDoc.data()?.name as string | undefined;
 
+  // Load team members once for all chain generation
+  const teamSnap = await db.collection(COLLECTIONS.teamMembers(companyId)).get();
+  const teamRoleMap = new Map<string, string>();
+  for (const doc of teamSnap.docs) {
+    const m = doc.data();
+    if (!teamRoleMap.has(m.role)) teamRoleMap.set(m.role, doc.id);
+  }
+
   // Deduplicate
   const seen = new Set<string>();
   const uniqueTasks = tasks.filter((t) => {
@@ -362,9 +370,7 @@ async function saveParsedTasks(
       }
     }
 
-    if (!t.isOurTask) continue;
-
-    // Create order items
+    // Create order items for all tasks
     if (category === "CABINET_DELIVERY") {
       const leadTimeWeeks = await getLeadTimeWeeks("CABINETS_STANDARD", companyId, projectId);
       const orderByDate = new Date(new Date(t.startDate).getTime() - leadTimeWeeks * 7 * 24 * 60 * 60 * 1000);
@@ -383,6 +389,7 @@ async function saveParsedTasks(
         notes: null,
         status: "NOT_ORDERED",
         taskName: t.taskName,
+        assignedResource: t.assignedResource ?? null,
         building: normalizedBuilding,
         floor: normalizedFloor,
         gcInstallDate,
@@ -390,9 +397,7 @@ async function saveParsedTasks(
         updatedAt: FieldValue.serverTimestamp(),
       });
       orderItemsCreated++;
-    }
-
-    if (category === "COUNTERTOP_SET") {
+    } else if (category === "COUNTERTOP_SET") {
       const leadTimeWeeks = await getLeadTimeWeeks("COUNTERTOPS", companyId, projectId);
       const orderByDate = new Date(new Date(t.startDate).getTime() - leadTimeWeeks * 7 * 24 * 60 * 60 * 1000);
       const orderRef = db.collection(`companies/${companyId}/projects/${projectId}/orderItems`).doc();
@@ -410,6 +415,34 @@ async function saveParsedTasks(
         notes: null,
         status: "NOT_ORDERED",
         taskName: t.taskName,
+        assignedResource: t.assignedResource ?? null,
+        building: normalizedBuilding,
+        floor: normalizedFloor,
+        gcInstallDate,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      orderItemsCreated++;
+    } else {
+      // CABINET_INSTALL, OTHER — use TRADE_MATERIALS
+      const leadTimeWeeks = await getLeadTimeWeeks("TRADE_MATERIALS", companyId, projectId);
+      const orderByDate = new Date(new Date(t.startDate).getTime() - leadTimeWeeks * 7 * 24 * 60 * 60 * 1000);
+      const orderRef = db.collection(`companies/${companyId}/projects/${projectId}/orderItems`).doc();
+      await orderRef.set({
+        id: orderRef.id,
+        taskId: taskRef.id,
+        projectId,
+        companyId,
+        itemType: "TRADE_MATERIALS",
+        leadTimeWeeks,
+        orderByDate: Timestamp.fromDate(orderByDate),
+        orderedAt: null,
+        poNumber: null,
+        vendorName: null,
+        notes: null,
+        status: "NOT_ORDERED",
+        taskName: t.taskName,
+        assignedResource: t.assignedResource ?? null,
         building: normalizedBuilding,
         floor: normalizedFloor,
         gcInstallDate,
@@ -419,33 +452,27 @@ async function saveParsedTasks(
       orderItemsCreated++;
     }
 
-    // Generate task chain for new building/floor combos
-    if (["CABINET_DELIVERY", "CABINET_INSTALL", "COUNTERTOP_SET"].includes(category)) {
-      const existingChainSnap = await db
-        .collection(`companies/${companyId}/projects/${projectId}/taskSteps`)
-        .where("building", "==", normalizedBuilding)
-        .where("floor", "==", normalizedFloor)
-        .limit(1)
-        .get();
+    // Generate task chain for every task (keyed by taskRef.id — unique per task per upload)
+    const ltWeeks = category === "COUNTERTOP_SET"
+      ? await getLeadTimeWeeks("COUNTERTOPS", companyId, projectId)
+      : category === "CABINET_DELIVERY"
+        ? await getLeadTimeWeeks("CABINETS_STANDARD", companyId, projectId)
+        : await getLeadTimeWeeks("TRADE_MATERIALS", companyId, projectId);
 
-      if (existingChainSnap.empty) {
-        const ltWeeks = category === "COUNTERTOP_SET"
-          ? await getLeadTimeWeeks("COUNTERTOPS", companyId, projectId)
-          : await getLeadTimeWeeks("CABINETS_STANDARD", companyId, projectId);
-
-        await generateTaskChain({
-          projectId,
-          companyId,
-          building: normalizedBuilding,
-          floor: normalizedFloor,
-          taskId: taskRef.id,
-          installDate: new Date(t.startDate),
-          leadTimeWeeks: ltWeeks,
-          projectName,
-        });
-        chainsCreated++;
-      }
-    }
+    await generateTaskChain({
+      projectId,
+      companyId,
+      building: normalizedBuilding,
+      floor: normalizedFloor,
+      taskId: taskRef.id,
+      taskName: t.taskName,
+      assignedResource: t.assignedResource ?? null,
+      installDate: new Date(t.startDate),
+      leadTimeWeeks: ltWeeks,
+      projectName,
+      teamRoleMap,
+    });
+    chainsCreated++;
   }
 
   // Mark upload as parsed
@@ -486,19 +513,14 @@ async function generateTaskChain(input: {
   building: string | null;
   floor: string | null;
   taskId: string;
+  taskName: string;
+  assignedResource: string | null;
   installDate: Date;
   leadTimeWeeks: number;
   projectName?: string;
+  teamRoleMap: Map<string, string>;
 }): Promise<void> {
-  const { projectId, companyId, building, floor, taskId, installDate, leadTimeWeeks, projectName } = input;
-
-  // Get team members for auto-assignment
-  const teamSnap = await db.collection(COLLECTIONS.teamMembers(companyId)).get();
-  const roleMap = new Map<string, string>();
-  for (const doc of teamSnap.docs) {
-    const m = doc.data();
-    if (!roleMap.has(m.role)) roleMap.set(m.role, doc.id);
-  }
+  const { projectId, companyId, building, floor, taskId, taskName, assignedResource, installDate, leadTimeWeeks, projectName, teamRoleMap } = input;
 
   const orderByDate = new Date(installDate.getTime() - leadTimeWeeks * 7 * 24 * 60 * 60 * 1000);
   const confirmByDate = new Date(installDate.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -527,12 +549,14 @@ async function generateTaskChain(input: {
       projectId,
       companyId,
       taskId,
+      taskName,
+      assignedResource,
       building,
       floor,
       projectName: projectName ?? null,
       stepType: s.stepType,
       canEditBy: STEP_CAN_EDIT_BY[s.stepType] ?? "GC",
-      assignedToId: roleMap.get(STEP_ROLE_MAP[s.stepType]) ?? null,
+      assignedToId: teamRoleMap.get(STEP_ROLE_MAP[s.stepType]) ?? null,
       dueDate: s.dueDate ? Timestamp.fromDate(s.dueDate) : null,
       completedAt: null,
       status: "PENDING",

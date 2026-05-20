@@ -11,7 +11,7 @@ export type ProjectConnectionStatus = "pending" | "active";
 export type CanEditBy = "GC" | "SUB" | "BOTH";
 export type GcPlatform = "PROCORE" | "BUILDERTREND" | "OTHER";
 export type TaskCategory = "CABINET_DELIVERY" | "CABINET_INSTALL" | "COUNTERTOP_SET" | "OTHER";
-export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE";
+export type ItemType = "CABINETS_STANDARD" | "CABINETS_CUSTOM" | "COUNTERTOPS" | "HARDWARE" | "TRADE_MATERIALS";
 export type OrderStatus = "NOT_ORDERED" | "ORDERED" | "IN_TRANSIT" | "DELIVERED" | "CANCELLED";
 export type TeamRole = "OWNER" | "SUPERVISOR" | "PURCHASING" | "INSTALLER" | "DRAFTING";
 export type StepType = "SHOP_DRAWINGS" | "SUBMISSIONS" | "ORDER_MATERIALS" | "CONFIRM_DELIVERY" | "INSTALL" | "PUNCH_LIST";
@@ -147,7 +147,8 @@ export interface OrderItem {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   // Denormalized from task for display
-  taskName?: string;
+  taskName?: string | null;
+  assignedResource?: string | null;
   building?: string | null;
   floor?: string | null;
   gcInstallDate?: Timestamp;
@@ -217,6 +218,8 @@ export interface TaskStep {
   taskId?: string | null;
   building?: string | null;
   floor?: string | null;
+  taskName?: string | null;
+  assignedResource?: string | null;
   stepType: StepType;
   canEditBy: CanEditBy;
   assignedToId?: string | null;
@@ -225,7 +228,6 @@ export interface TaskStep {
   completedAt?: Timestamp | null;
   status: StepStatus;
   notes?: string | null;
-  canEditBy?: "GC" | "SUB" | "BOTH" | null;
   track: StepTrack;
   dependsOnId?: string | null;
   createdAt: Timestamp;
@@ -353,6 +355,7 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
   CABINETS_CUSTOM: "Cabinets (custom)",
   COUNTERTOPS: "Countertops",
   HARDWARE: "Hardware",
+  TRADE_MATERIALS: "Trade Materials",
 };
 
 export const TASK_CATEGORY_LABELS: Record<TaskCategory, string> = {
@@ -403,4 +406,5 @@ export const DEFAULT_LEAD_TIMES: Array<{ itemType: ItemType; label: string; lead
   { itemType: "CABINETS_CUSTOM", label: "Custom/Semi-Custom", leadTimeWeeks: 16 },
   { itemType: "COUNTERTOPS", label: "Fabricated", leadTimeWeeks: 3 },
   { itemType: "HARDWARE", label: "Standard", leadTimeWeeks: 4 },
+  { itemType: "TRADE_MATERIALS", label: "Standard", leadTimeWeeks: 4 },
 ];
