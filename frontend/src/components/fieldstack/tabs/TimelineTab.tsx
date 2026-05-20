@@ -26,6 +26,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ChevronDown, Users, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { firestore } from "@/lib/firebase";
+import { useCompany } from "@/contexts/CompanyContext";
 import type { Task, TaskStep } from "@/types/fieldstack";
 import { TASK_CATEGORY_LABELS } from "@/types/fieldstack";
 import type { ConnectedSub } from "@/hooks/useProjectConnections";
@@ -169,6 +170,8 @@ export function TimelineTab({
   projectId,
   connectedSubs,
 }: Props) {
+  const { company } = useCompany();
+  const isGc = company?.companyType === "GC";
   const [filter, setFilter] = useState<"ours" | "all">("all");
   const [bulkGroupBy, setBulkGroupBy] = useState<
     "building" | "floor" | "category"
@@ -284,10 +287,10 @@ export function TimelineTab({
         >
           <TabsList className="h-7">
             <TabsTrigger value="ours" className="text-xs h-6 px-3">
-              Our Tasks
+              {isGc ? "Cab/CT Only" : "Our Tasks"}
             </TabsTrigger>
             <TabsTrigger value="all" className="text-xs h-6 px-3">
-              All Tasks
+              {isGc ? "All Trades" : "All Tasks"}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -418,7 +421,7 @@ export function TimelineTab({
         </Card>
       )}
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 mt-1">
         {displayed.map((t) => {
           const subName =
             t.assignedSubCompanyId
@@ -516,7 +519,9 @@ export function TimelineTab({
       {displayed.length === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            No {filter === "ours" ? "cabinet/countertop" : ""} tasks found.
+            {filter === "ours"
+              ? `No ${isGc ? "cabinet/countertop" : "our"} tasks found.`
+              : "No tasks found."}
           </CardContent>
         </Card>
       )}
