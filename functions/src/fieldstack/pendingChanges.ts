@@ -14,10 +14,18 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import cors from "cors";
+import { Resend } from "resend";
 import { verifyCompanyMember, replyUnauthorized, replyBadRequest, replyNotFound } from "./middleware";
 import { COLLECTIONS } from "./types";
 import { sanitizeString } from "../validation";
 import { logger } from "../logger";
+
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  return key ? new Resend(key) : null;
+}
+
+const FROM = process.env.EMAIL_FROM ?? "alerts@fieldstack.app";
 
 const db = admin.firestore();
 
@@ -139,6 +147,37 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
 
         await batch.commit();
         logger.info("pendingChange approved", { companyId, changeId, taskId: change.taskId });
+
+        // Send approval email to sub — must not fail the API response
+        try {
+          const resend = getResend();
+          const subEmail = change.requestedByEmail as string | null | undefined;
+          if (resend && subEmail) {
+            const newDateStr = new Date(change.requestedDate.toMillis()).toLocaleDateString("en-US", {
+              year: "numeric", month: "long", day: "numeric",
+            });
+            const origDateStr = new Date(change.originalDate.toMillis()).toLocaleDateString("en-US", {
+              year: "numeric", month: "long", day: "numeric",
+            });
+            const taskLabel = change.taskName ? `<strong>${change.taskName}</strong>` : "your task";
+            await resend.emails.send({
+              from: FROM,
+              to: subEmail,
+              subject: "Your date change request was approved",
+              html: `<p>Hi,</p>
+<p>Your date change request for ${taskLabel} has been <strong>approved</strong>.</p>
+<ul>
+  <li><strong>Original date:</strong> ${origDateStr}</li>
+  <li><strong>New date:</strong> ${newDateStr}</li>
+</ul>
+${change.notes ? `<p><strong>Your notes:</strong> ${change.notes}</p>` : ""}
+<p>Thank you,<br>FieldStack</p>`,
+            });
+          }
+        } catch (emailErr) {
+          logger.warn("pendingChange approve: failed to send approval email", { changeId, error: emailErr });
+        }
+
         res.json({ success: true }); return;
       }
 
@@ -152,18 +191,63 @@ export const pendingChangesApi = functions.https.onRequest((req, res) => {
           updatedAt: FieldValue.serverTimestamp(),
         });
         logger.info("pendingChange rejected", { companyId, changeId });
+
+        // Send rejection email to sub — must not fail the API response
+        try {
+          const resend = getResend();
+          const subEmail = change.requestedByEmail as string | null | undefined;
+          if (resend && subEmail) {
+            const requestedDateStr = new Date(change.requestedDate.toMillis()).toLocaleDateString("en-US", {
+              year: "numeric", month: "long", day: "numeric",
+            });
+            const taskLabel = change.taskName ? `<strong>${change.taskName}</strong>` : "your task";
+            const sanitizedReason = reason ? sanitizeString(reason) : null;
+            await resend.emails.send({
+              from: FROM,
+              to: subEmail,
+              subject: "Your date change request was not approved",
+              html: `<p>Hi,</p>
+<p>Your date change request for ${taskLabel} (requested date: ${requestedDateStr}) has been <strong>rejected</strong>.</p>
+${sanitizedReason ? `<p><strong>Reason:</strong> ${sanitizedReason}</p>` : ""}
+<p>Please reach out to your GC if you have questions.</p>
+<p>Thank you,<br>FieldStack</p>`,
+            });
+          }
+        } catch (emailErr) {
+          logger.warn("pendingChange reject: failed to send rejection email", { changeId, error: emailErr });
+        }
+
         res.json({ success: true }); return;
       }
     }
 
-    // ── GET ?projectId=X ──────────────────────────────────────────────────────
+    // ── GET ?projectId=X[&gcCompanyId=Y] ─────────────────────────────────────
     if (req.method === "GET") {
       const projectId = req.query.projectId as string | undefined;
+      const gcCompanyId = req.query.gcCompanyId as string | undefined;
       if (!projectId) { replyBadRequest(res, "projectId query parameter required."); return; }
 
-      const col = `${COLLECTIONS.projects(companyId)}/${projectId}/pendingChanges`;
+      const ownerCompanyId = (gcCompanyId && gcCompanyId !== companyId) ? gcCompanyId : companyId;
+
+      // Sub viewing their own requests: validate active project connection first
+      if (gcCompanyId && gcCompanyId !== companyId) {
+        const connSnap = await db
+          .doc(`${COLLECTIONS.projectConnections(gcCompanyId)}/${projectId}_${companyId}`)
+          .get();
+        if (!connSnap.exists || connSnap.data()?.status !== "ACTIVE") {
+          replyUnauthorized(res); return;
+        }
+      }
+
+      const col = `${COLLECTIONS.projects(ownerCompanyId)}/${projectId}/pendingChanges`;
       const snap = await db.collection(col).orderBy("createdAt", "desc").get();
-      const changes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let changes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Sub users: return only their own requests
+      if (gcCompanyId && gcCompanyId !== companyId) {
+        changes = changes.filter((c) => (c as Record<string, unknown>).subCompanyId === companyId);
+      }
+
       res.json(changes); return;
     }
 

@@ -44,6 +44,7 @@ const FUNCTION_PATHS: Record<string, string> = {
   procoreCallbackApi:     "/api/procore/callback",
   stepsApi:               "/api/steps",
   magicLinkApi:           "/api/magic-link",
+  gcUploadLinkApi:        "/api/gc-upload-link",
   escalationApi:          "/api/alerts/escalate",
   gcDraftApi:             "/api/gc-draft",
   fromScheduleApi:        "/api/projects/from-schedule",
@@ -136,7 +137,8 @@ export async function apiDeleteProject(id: string): Promise<void> {
 
 export async function apiUploadSchedule(
   projectId: string,
-  file: File
+  file: File,
+  gcCompanyId?: string
 ): Promise<{ tasksCreated: number; orderItemsCreated: number; version: number; changesDetected: number }> {
   const token = await getAuthToken();
   if (!token) throw new ApiError("You must be signed in.", 401, false);
@@ -144,6 +146,7 @@ export async function apiUploadSchedule(
   const fd = new FormData();
   fd.append("file", file);
   fd.append("projectId", projectId);
+  if (gcCompanyId) fd.append("gcCompanyId", gcCompanyId);
 
   const res = await fetch(apiPath("schedulesUploadApi"), {
     method: "POST",
@@ -340,8 +343,10 @@ export async function apiGetMyTasks(): Promise<object[]> {
 
 // ─── Pending Changes ──────────────────────────────────────────────────────────
 
-export async function apiGetPendingChanges(projectId: string): Promise<object[]> {
-  return callFunction("pendingChangesApi", `?projectId=${encodeURIComponent(projectId)}`);
+export async function apiGetPendingChanges(projectId: string, gcCompanyId?: string): Promise<object[]> {
+  let qs = `?projectId=${encodeURIComponent(projectId)}`;
+  if (gcCompanyId) qs += `&gcCompanyId=${encodeURIComponent(gcCompanyId)}`;
+  return callFunction("pendingChangesApi", qs);
 }
 
 export async function apiRequestDateChange(data: {
@@ -396,4 +401,20 @@ export async function apiGetInviteInfo(inviteToken: string): Promise<{
 
 export async function apiAcceptInvite(token: string): Promise<{ gcProjectId: string; gcCompanyId: string }> {
   return callFunction("inviteAcceptApi", "", { method: "POST", body: JSON.stringify({ token }) });
+}
+
+// ─── GC Upload Link ───────────────────────────────────────────────────────────
+
+export async function apiGetGcUploadLink(token: string): Promise<{
+  projectId: string;
+  gcCompanyId: string;
+  projectName: string;
+}> {
+  const base = functionsBaseUrl ? `${functionsBaseUrl}/gcUploadLinkApi` : "/api/gc-upload-link";
+  const r = await fetch(`${base}?token=${encodeURIComponent(token)}`);
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({ error: r.statusText }));
+    throw new ApiError(typeof body?.error === "string" ? body.error : `Request failed (${r.status})`, r.status, false);
+  }
+  return r.json();
 }

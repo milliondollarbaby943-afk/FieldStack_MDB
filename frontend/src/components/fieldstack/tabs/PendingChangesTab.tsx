@@ -20,6 +20,7 @@ interface Props {
   projectId: string;
   changes: PendingChange[];
   onRefresh: () => void;
+  isSubView?: boolean;
 }
 
 function fmtTs(ts: Timestamp | undefined | null) {
@@ -37,7 +38,7 @@ function statusBadge(status: string) {
   return <Badge variant="secondary" className="text-blue-600 text-[10px]">Pending</Badge>;
 }
 
-function ChangeCard({ change, onRefresh }: { change: PendingChange; onRefresh: () => void }) {
+function ChangeCard({ change, onRefresh, isSubView }: { change: PendingChange; onRefresh: () => void; isSubView?: boolean }) {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [loading, setLoading] = useState(false);
@@ -116,7 +117,7 @@ function ChangeCard({ change, onRefresh }: { change: PendingChange; onRefresh: (
           <div className="shrink-0">{statusBadge(change.status)}</div>
         </div>
 
-        {!isResolved && !rejecting && (
+        {!isResolved && !rejecting && !isSubView && (
           <div className="flex gap-2 pt-1">
             <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-400/40 hover:bg-emerald-50" onClick={handleApprove} disabled={loading}>
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
@@ -129,7 +130,7 @@ function ChangeCard({ change, onRefresh }: { change: PendingChange; onRefresh: (
           </div>
         )}
 
-        {!isResolved && rejecting && (
+        {!isResolved && rejecting && !isSubView && (
           <div className="space-y-2 pt-1">
             <Textarea
               placeholder="Reason for rejection (optional)"
@@ -153,7 +154,7 @@ function ChangeCard({ change, onRefresh }: { change: PendingChange; onRefresh: (
   );
 }
 
-export function PendingChangesTab({ changes, onRefresh }: Props) {
+export function PendingChangesTab({ changes, onRefresh, isSubView }: Props) {
   const open = changes.filter((c) => c.status === "PENDING" || c.status === "CONFLICT");
   const resolved = changes.filter((c) => c.status === "APPROVED" || c.status === "REJECTED");
 
@@ -164,7 +165,9 @@ export function PendingChangesTab({ changes, onRefresh }: Props) {
           <Clock className="h-8 w-8 mx-auto mb-3 text-muted-foreground opacity-40" />
           <p className="text-sm text-muted-foreground">No date change requests.</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Subs can request a new install date from their My Tasks view.
+            {isSubView
+              ? "You haven't submitted any date change requests for this project."
+              : "Subs can request a new install date from their My Tasks view."}
           </p>
         </CardContent>
       </Card>
@@ -176,11 +179,11 @@ export function PendingChangesTab({ changes, onRefresh }: Props) {
       {open.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-sm font-semibold">
-            Awaiting Review
+            {isSubView ? "Pending" : "Awaiting Review"}
             <span className="ml-2 text-xs font-normal text-muted-foreground">({open.length})</span>
           </h3>
           {open.map((c) => (
-            <ChangeCard key={c.id} change={c} onRefresh={onRefresh} />
+            <ChangeCard key={c.id} change={c} onRefresh={onRefresh} isSubView={isSubView} />
           ))}
         </div>
       )}
@@ -192,7 +195,7 @@ export function PendingChangesTab({ changes, onRefresh }: Props) {
             <span className="ml-2 text-xs font-normal">({resolved.length})</span>
           </h3>
           {resolved.map((c) => (
-            <ChangeCard key={c.id} change={c} onRefresh={onRefresh} />
+            <ChangeCard key={c.id} change={c} onRefresh={onRefresh} isSubView={isSubView} />
           ))}
         </div>
       )}

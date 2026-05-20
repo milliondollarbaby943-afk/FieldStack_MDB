@@ -27,7 +27,9 @@ import MyTasksPage from "./pages/MyTasksPage";
 import CompanySetup from "./pages/CompanySetup";
 import MagicLinkAction from "./pages/MagicLinkAction";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import GcUploadPage from "./pages/GcUploadPage";
 import SubDashboardPage from "./pages/SubDashboardPage";
+import SubProjectPage from "./pages/SubProjectPage";
 
 const SystemAdmin = lazy(() => import("./pages/SystemAdmin"));
 
@@ -56,7 +58,11 @@ function AppRoutes() {
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={isSub ? <SubDashboardPage /> : <Dashboard />} />
-          {!isSub && <Route path="/projects/:id" element={<ProjectDetail />} />}
+          {isSub ? (
+            <Route path="/projects/:id" element={<SubProjectPage />} />
+          ) : (
+            <Route path="/projects/:id" element={<ProjectDetail />} />
+          )}
           <Route path="/team" element={<TeamPage />} />
           <Route path="/my-tasks" element={<MyTasksPage />} />
           <Route path="/settings" element={<FieldStackSettings />} />
@@ -118,6 +124,7 @@ const App = () => (
               <Route path="/auth/action" element={<AuthAction />} />
               <Route path="/tasks/action" element={<MagicLinkAction />} />
               <Route path="/invite/accept" element={<AcceptInvitePage />} />
+              <Route path="/gc-upload" element={<GcUploadPage />} />
               <Route path="*" element={<AuthGate />} />
             </Routes>
           </BrowserRouter>

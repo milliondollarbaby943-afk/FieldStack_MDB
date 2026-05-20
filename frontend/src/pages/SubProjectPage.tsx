@@ -1,16 +1,33 @@
 /**
- * SubDashboardPage — shown to SUB company users instead of the GC Dashboard.
+ * SubProjectPage — project detail view for sub company users.
  *
- * Shows only tasks assigned to this sub company, grouped by project.
- * Sub can update task step status and notes for steps where canEditBy is
- * 'SUB' or 'BOTH'. GC-only fields (pricing, orders) are hidden.
+ * Shows only data the sub has access to: their assigned tasks, steps,
+ * schedule upload, and their own date change requests.
+ * No destructive actions (no delete project, no order management, no alerts).
+ *
+ * URL: /projects/:id?gc={gcCompanyId}
  */
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Circle,
+  Clock,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Upload,
+  CalendarClock,
+} from "lucide-react";
+import { format } from "date-fns";
+import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,23 +36,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  CheckCircle2,
-  Circle,
-  Clock,
-  AlertCircle,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  HardHat,
-  FolderOpen,
-} from "lucide-react";
-import { format } from "date-fns";
-import { toast } from "sonner";
-import { Link } from "react-router-dom";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { UploadTab } from "@/components/fieldstack/tabs/UploadTab";
+import { PendingChangesTab } from "@/components/fieldstack/tabs/PendingChangesTab";
 import { useSubTasks } from "@/hooks/useSubTasks";
 import { useCompany } from "@/contexts/CompanyContext";
-import type { Task, TaskStep } from "@/types/fieldstack";
+import { apiGetPendingChanges } from "@/lib/fieldstackApi";
+import type { Task, TaskStep, PendingChange } from "@/types/fieldstack";
 import { TASK_CATEGORY_LABELS, STEP_TYPE_LABELS } from "@/types/fieldstack";
 
 function fmt(ts: Timestamp | undefined | null) {
@@ -70,20 +77,13 @@ function nextStatusLabel(current: string): string {
 }
 
 function canSubEdit(step: TaskStep): boolean {
-  // If canEditBy is not set, default conservative (GC only).
-  // INSTALL and PUNCH_LIST are sub-editable by convention.
   const editBy = step.canEditBy;
   if (editBy === "SUB" || editBy === "BOTH") return true;
   if (editBy == null && (step.stepType === "INSTALL" || step.stepType === "PUNCH_LIST" || step.stepType === "CONFIRM_DELIVERY")) return true;
   return false;
 }
 
-interface StepRowProps {
-  step: TaskStep;
-  gcCompanyId: string;
-}
-
-function StepRow({ step, gcCompanyId }: StepRowProps) {
+function StepRow({ step, gcCompanyId }: { step: TaskStep; gcCompanyId: string }) {
   const [updating, setUpdating] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState(step.notes ?? "");
@@ -148,7 +148,6 @@ function StepRow({ step, gcCompanyId }: StepRowProps) {
         )}
       </div>
 
-      {/* Notes */}
       {editable && (
         editingNotes ? (
           <div className="flex flex-col gap-1.5 pl-6">
@@ -184,13 +183,7 @@ function StepRow({ step, gcCompanyId }: StepRowProps) {
   );
 }
 
-interface TaskCardProps {
-  task: Task;
-  steps: TaskStep[];
-  gcCompanyId: string;
-}
-
-function TaskCard({ task, steps, gcCompanyId }: TaskCardProps) {
+function TaskCard({ task, steps, gcCompanyId }: { task: Task; steps: TaskStep[]; gcCompanyId: string }) {
   const [open, setOpen] = useState(false);
   const taskSteps = steps.filter((s) => s.taskId === task.id);
   const subSteps = taskSteps.filter(canSubEdit);
@@ -245,69 +238,170 @@ function TaskCard({ task, steps, gcCompanyId }: TaskCardProps) {
   );
 }
 
-export default function SubDashboardPage() {
+export default function SubProjectPage() {
+  const { id: projectId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const { company } = useCompany();
-  const { groups, loading } = useSubTasks();
+  const { groups, loading: tasksLoading } = useSubTasks();
 
-  const totalTasks = groups.reduce((s, g) => s + g.tasks.length, 0);
+  const urlGcId = searchParams.get("gc") ?? "";
+  const group = groups.find(
+    (g) => g.projectId === projectId && (urlGcId ? g.gcCompanyId === urlGcId : true)
+  );
+  const gcCompanyId = urlGcId || group?.gcCompanyId || "";
 
-  return (
-    <div className="p-6 max-w-3xl">
-      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <HardHat className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold tracking-tight">My Projects</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Tasks assigned to {company?.name ?? "your company"} across all active projects.
-        </p>
-      </motion.div>
+  const [activeTab, setActiveTab] = useState("tasks");
+  const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
 
-      {loading && (
-        <div className="flex items-center justify-center py-20 gap-3 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading your tasks…
-        </div>
-      )}
+  const loadPending = useCallback(async () => {
+    if (!projectId || !gcCompanyId) return;
+    setPendingLoading(true);
+    try {
+      const data = await apiGetPendingChanges(projectId, gcCompanyId);
+      setPendingChanges(data as PendingChange[]);
+    } catch {
+      // silent — shows empty state
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [projectId, gcCompanyId]);
 
-      {!loading && totalTasks === 0 && (
+  useEffect(() => {
+    if (activeTab === "pending") loadPending();
+  }, [activeTab, loadPending]);
+
+  const projectName = group?.projectName ?? "Project";
+  const tasks = group?.tasks ?? [];
+  const steps = group?.steps ?? [];
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t) =>
+    steps.filter((s) => s.taskId === t.id && canSubEdit(s)).every((s) => s.status === "COMPLETE")
+    && steps.some((s) => s.taskId === t.id && canSubEdit(s))
+  ).length;
+
+  if (!tasksLoading && !group && gcCompanyId) {
+    return (
+      <div className="p-6 max-w-3xl">
+        <Link to="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6">
+          <ArrowLeft className="h-4 w-4" /> Back to My Projects
+        </Link>
         <Card>
           <CardContent className="py-16 text-center">
-            <HardHat className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
-            <p className="text-sm font-medium mb-1">No tasks assigned yet</p>
+            <p className="text-sm font-medium mb-1">Project not found</p>
             <p className="text-xs text-muted-foreground max-w-xs mx-auto">
-              Your GC partners will assign tasks to your company once they connect you to a project.
+              This project may no longer be active or you may not have tasks assigned here.
             </p>
           </CardContent>
         </Card>
-      )}
+      </div>
+    );
+  }
 
-      {!loading && groups.map((group) => (
-        <div key={`${group.gcCompanyId}/${group.projectId}`} className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-base font-semibold">{group.projectName}</h2>
-              <p className="text-xs text-muted-foreground">{group.tasks.length} assigned task{group.tasks.length !== 1 ? "s" : ""}</p>
-            </div>
-            <Link
-              to={`/projects/${group.projectId}?gc=${group.gcCompanyId}`}
-              className="flex items-center gap-1.5 text-xs text-primary hover:underline shrink-0"
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              Open Project
-            </Link>
-          </div>
-          <div className="flex flex-col gap-2">
-            {group.tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                steps={group.steps}
-                gcCompanyId={group.gcCompanyId}
-              />
-            ))}
-          </div>
+  return (
+    <div className="p-6 max-w-3xl">
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}>
+        <Link to="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4">
+          <ArrowLeft className="h-4 w-4" /> My Projects
+        </Link>
+
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
+          {!tasksLoading && (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {totalTasks} assigned task{totalTasks !== 1 ? "s" : ""}
+              {totalTasks > 0 && ` · ${completedTasks}/${totalTasks} complete`}
+            </p>
+          )}
         </div>
-      ))}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="tasks" className="gap-1.5">
+              My Tasks
+            </TabsTrigger>
+            <TabsTrigger value="upload" className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              Upload Schedule
+            </TabsTrigger>
+            <TabsTrigger value="pending" className="gap-1.5">
+              <CalendarClock className="h-3.5 w-3.5" />
+              My Requests
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="tasks">
+            {tasksLoading && (
+              <div className="flex items-center gap-3 text-muted-foreground py-10 justify-center">
+                <Loader2 className="h-5 w-5 animate-spin" /> Loading tasks…
+              </div>
+            )}
+
+            {!tasksLoading && tasks.length === 0 && (
+              <Card>
+                <CardContent className="py-14 text-center">
+                  <p className="text-sm font-medium mb-1">No tasks assigned to you here</p>
+                  <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                    Your GC will assign tasks to your company from the project schedule.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {!tasksLoading && tasks.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {tasks
+                  .slice()
+                  .sort((a, b) => {
+                    const aMs = a.gcInstallDate?.seconds ?? 0;
+                    const bMs = b.gcInstallDate?.seconds ?? 0;
+                    return aMs - bMs;
+                  })
+                  .map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      steps={steps}
+                      gcCompanyId={gcCompanyId}
+                    />
+                  ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="upload">
+            {projectId && (
+              <UploadTab
+                projectId={projectId}
+                gcCompanyId={gcCompanyId}
+                onUploaded={() => {
+                  toast.success("Schedule uploaded. Your GC will review changes.");
+                  setActiveTab("pending");
+                  loadPending();
+                }}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="pending">
+            {pendingLoading ? (
+              <div className="flex items-center gap-3 text-muted-foreground py-10 justify-center">
+                <Loader2 className="h-5 w-5 animate-spin" /> Loading requests…
+              </div>
+            ) : (
+              projectId && (
+                <PendingChangesTab
+                  projectId={projectId}
+                  changes={pendingChanges}
+                  onRefresh={loadPending}
+                  isSubView
+                />
+              )
+            )}
+          </TabsContent>
+        </Tabs>
+      </motion.div>
     </div>
   );
 }

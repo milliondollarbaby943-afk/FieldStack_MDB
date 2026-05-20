@@ -69,6 +69,22 @@
       ]
     },
     {
+      "collectionGroup": "taskSteps",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "assignedSubCompanyId", "order": "ASCENDING" },
+        { "fieldPath": "id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pendingChanges",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "id", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "escalationLogs",
       "queryScope": "COLLECTION",
       "fields": [

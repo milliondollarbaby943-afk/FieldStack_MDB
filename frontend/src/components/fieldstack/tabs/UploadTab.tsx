@@ -11,10 +11,11 @@ import { apiUploadSchedule } from "@/lib/fieldstackApi";
 
 interface Props {
   projectId: string;
+  gcCompanyId?: string;
   onUploaded: () => void;
 }
 
-export function UploadTab({ projectId, onUploaded }: Props) {
+export function UploadTab({ projectId, gcCompanyId, onUploaded }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<{ tasksCreated: number; orderItemsCreated: number; version: number; changesDetected: number } | null>(null);
@@ -32,7 +33,7 @@ export function UploadTab({ projectId, onUploaded }: Props) {
     setError("");
     setResult(null);
     try {
-      const data = await apiUploadSchedule(projectId, f);
+      const data = await apiUploadSchedule(projectId, f, gcCompanyId);
       setResult(data);
       toast.success("Schedule parsed successfully!");
       setTimeout(() => onUploaded(), 1500);

@@ -10,6 +10,7 @@ import cors from "cors";
 import { verifyCompanyMember, replyUnauthorized, replyBadRequest, replyNotFound } from "./middleware";
 import { sanitizeString } from "../validation";
 import { logger } from "../logger";
+import { COLLECTIONS } from "./types";
 
 const db = admin.firestore();
 
@@ -46,13 +47,38 @@ export const stepsApi = functions.https.onRequest((req, res) => {
     const stepId = pathMatch?.[1];
     if (!stepId) { replyBadRequest(res, "Step ID required."); return; }
 
-    // Find the step via collection group query
-    const stepSnap = await db
+    // Find the step: GC path first, then sub fallback
+    let stepSnap = await db
       .collectionGroup("taskSteps")
       .where("id", "==", stepId)
       .where("companyId", "==", companyId)
       .limit(1)
       .get();
+
+    let isSubStep = false;
+
+    // Sub fallback: step.companyId is the GC's ID; sub found via assignedSubCompanyId
+    if (stepSnap.empty) {
+      const subSnap = await db
+        .collectionGroup("taskSteps")
+        .where("id", "==", stepId)
+        .where("assignedSubCompanyId", "==", companyId)
+        .limit(1)
+        .get();
+
+      if (!subSnap.empty) {
+        const sd = subSnap.docs[0].data();
+        if (sd.projectId && sd.companyId) {
+          const connSnap = await db
+            .doc(`${COLLECTIONS.projectConnections(sd.companyId as string)}/${sd.projectId}_${companyId}`)
+            .get();
+          if (connSnap.exists && connSnap.data()?.status === "ACTIVE") {
+            stepSnap = subSnap;
+            isSubStep = true;
+          }
+        }
+      }
+    }
 
     if (stepSnap.empty) { replyNotFound(res, "Step not found."); return; }
 
@@ -75,17 +101,21 @@ export const stepsApi = functions.https.onRequest((req, res) => {
       }
     }
     if (notes !== undefined) updates.notes = sanitizeString(notes) || null;
-    if (assignedToId !== undefined) updates.assignedToId = assignedToId || null;
-    if (dueDate !== undefined) updates.dueDate = dueDate ? Timestamp.fromDate(new Date(dueDate)) : null;
+    // GC-only fields: subs cannot reassign or change due dates
+    if (!isSubStep) {
+      if (assignedToId !== undefined) updates.assignedToId = assignedToId || null;
+      if (dueDate !== undefined) updates.dueDate = dueDate ? Timestamp.fromDate(new Date(dueDate)) : null;
+    }
 
     await stepRef.update(updates);
 
-    // Cascade: when a step completes, unblock dependent steps
+    // Cascade uses the GC's companyId (step owner), not the requesting user's companyId
+    const ownerCompanyId = (stepData.companyId as string | undefined) ?? companyId;
     if (status === "COMPLETE") {
-      await onStepComplete(stepId, stepData, companyId);
+      await onStepComplete(stepId, stepData, ownerCompanyId);
     }
 
-    logger.info("step updated", { companyId, stepId, status });
+    logger.info("step updated", { companyId, stepId, status, isSubStep });
     res.json({ success: true });
   });
 });

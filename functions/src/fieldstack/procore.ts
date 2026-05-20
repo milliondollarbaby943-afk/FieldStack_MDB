@@ -307,6 +307,79 @@ export const procoreSyncApi = functions.https.onRequest((req, res) => {
   });
 });
 
+// ─── Nightly sync (company-level, checks integration tokens) ─────────────────
+
+export const procoreNightlySync = functions.pubsub
+  .schedule("every 24 hours")
+  .onRun(async (_context) => {
+    logger.info("procoreNightlySync triggered");
+
+    const companiesSnap = await db
+      .collection("companies")
+      .where("companyType", "==", "GC")
+      .get();
+
+    logger.info(`procoreNightlySync: ${companiesSnap.size} GC companies to check`);
+
+    const results: Array<{ companyId: string; projectId: string; success: boolean }> = [];
+
+    for (const companyDoc of companiesSnap.docs) {
+      const companyId = companyDoc.id;
+
+      // Check if this company has a connected Procore integration
+      const integrationSnap = await db
+        .collection(`companies/${companyId}/integrations`)
+        .doc("procore")
+        .get();
+
+      if (!integrationSnap.exists || integrationSnap.data()?.status !== "connected") {
+        continue;
+      }
+
+      // Query all projects for this company that have a procoreProjectId
+      const projectsSnap = await db
+        .collection(COLLECTIONS.projects(companyId))
+        .where("procoreProjectId", "!=", null)
+        .get();
+
+      for (const projectDoc of projectsSnap.docs) {
+        const projectId = projectDoc.id;
+        const procoreProjectId = projectDoc.data().procoreProjectId as string;
+        const projectRef = projectDoc.ref;
+
+        try {
+          await syncProcoreSchedule(projectId, companyId);
+          await projectRef.update({
+            lastSyncedAt: FieldValue.serverTimestamp(),
+            syncStatus: "synced",
+          });
+          results.push({ companyId, projectId, success: true });
+        } catch (err) {
+          logger.error("procoreNightlySync: project sync failed", {
+            companyId,
+            projectId,
+            procoreProjectId,
+            error: String(err),
+          });
+          try {
+            await projectRef.update({ syncStatus: "error" });
+          } catch (updateErr) {
+            logger.error("procoreNightlySync: failed to write syncStatus=error", {
+              companyId,
+              projectId,
+              error: String(updateErr),
+            });
+          }
+          results.push({ companyId, projectId, success: false });
+        }
+      }
+    }
+
+    const succeeded = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    logger.info(`procoreNightlySync complete: ${succeeded} synced, ${failed} failed`, { results });
+  });
+
 // ─── Nightly cron ─────────────────────────────────────────────────────────────
 
 export const procoreSyncCron = functions.pubsub

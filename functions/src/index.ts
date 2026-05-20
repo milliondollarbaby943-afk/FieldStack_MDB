@@ -821,9 +821,10 @@ export {
 } from "./fieldstack/settings";
 export { stepsApi } from "./fieldstack/steps";
 export { magicLinkApi } from "./fieldstack/magicLink";
+export { gcUploadLinkApi } from "./fieldstack/gcUploadLink";
 export { escalationApi, escalationCron, digestCron } from "./fieldstack/escalation";
 export { gcDraftApi } from "./fieldstack/gcDraft";
 export { fromScheduleApi } from "./fieldstack/fromSchedule";
-export { procoreCallbackApi, procoreWebhookApi, procoreSyncApi, procoreSyncCron } from "./fieldstack/procore";
+export { procoreCallbackApi, procoreWebhookApi, procoreSyncApi, procoreSyncCron, procoreNightlySync } from "./fieldstack/procore";
 export { pendingChangesApi } from "./fieldstack/pendingChanges";
 export { inviteSubApi, inviteAcceptApi } from "./fieldstack/inviteSub";
