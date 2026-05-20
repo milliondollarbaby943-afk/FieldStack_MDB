@@ -281,6 +281,9 @@ async function saveParsedTasks(
   let chainsCreated = 0;
   let changesDetected = 0;
 
+  const projectDoc = await db.doc(`${COLLECTIONS.projects(companyId)}/${projectId}`).get();
+  const projectName = projectDoc.data()?.name as string | undefined;
+
   // Deduplicate
   const seen = new Set<string>();
   const uniqueTasks = tasks.filter((t) => {
@@ -438,6 +441,7 @@ async function saveParsedTasks(
           taskId: taskRef.id,
           installDate: new Date(t.startDate),
           leadTimeWeeks: ltWeeks,
+          projectName,
         });
         chainsCreated++;
       }
@@ -484,8 +488,9 @@ async function generateTaskChain(input: {
   taskId: string;
   installDate: Date;
   leadTimeWeeks: number;
+  projectName?: string;
 }): Promise<void> {
-  const { projectId, companyId, building, floor, taskId, installDate, leadTimeWeeks } = input;
+  const { projectId, companyId, building, floor, taskId, installDate, leadTimeWeeks, projectName } = input;
 
   // Get team members for auto-assignment
   const teamSnap = await db.collection(COLLECTIONS.teamMembers(companyId)).get();
@@ -510,19 +515,21 @@ async function generateTaskChain(input: {
 
   const stepIds: string[] = [];
   const now = FieldValue.serverTimestamp();
+  const batch = db.batch();
 
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
     const ref = db.collection(`companies/${companyId}/projects/${projectId}/taskSteps`).doc();
     stepIds.push(ref.id);
 
-    await ref.set({
+    batch.set(ref, {
       id: ref.id,
       projectId,
       companyId,
       taskId,
       building,
       floor,
+      projectName: projectName ?? null,
       stepType: s.stepType,
       canEditBy: STEP_CAN_EDIT_BY[s.stepType] ?? "GC",
       assignedToId: roleMap.get(STEP_ROLE_MAP[s.stepType]) ?? null,
@@ -536,6 +543,8 @@ async function generateTaskChain(input: {
       updatedAt: now,
     });
   }
+
+  await batch.commit();
 }
 
 // ─── Alert count updater ──────────────────────────────────────────────────────
@@ -608,6 +617,7 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
     let fileName = "schedule";
     // projectId may come from the form fields (multipart) or query string
     let fileProjectId: string | undefined = (req.query?.projectId as string | undefined);
+    let fileGcCompanyId: string | undefined;
 
     await new Promise<void>((resolve, reject) => {
       const bb = Busboy({ headers: req.headers, limits: { fileSize: 20 * 1024 * 1024 } }); // 20 MB cap
@@ -622,6 +632,7 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
 
       bb.on("field", (name: string, value: string) => {
         if (name === "projectId") fileProjectId = value;
+        if (name === "gcCompanyId") fileGcCompanyId = value;
       });
 
       bb.on("finish", resolve);
@@ -648,10 +659,25 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
     const resolvedProjectId = fileProjectId;
     if (!resolvedProjectId) { replyBadRequest(res, "projectId is required."); return; }
 
-    // ── Verify project exists and belongs to this company ──────────────────
-    const projectRef = db.doc(`${COLLECTIONS.projects(companyId)}/${resolvedProjectId}`);
+    // ── Resolve effective company ID (sub uploads route through GC path) ─────
+    let uploadCompanyId = companyId;
+
+    if (fileGcCompanyId && fileGcCompanyId !== companyId) {
+      // Sub upload: verify active projectConnection before allowing
+      const connectionId = `${resolvedProjectId}_${companyId}`;
+      const connSnap = await db
+        .doc(`${COLLECTIONS.projectConnections(fileGcCompanyId)}/${connectionId}`)
+        .get();
+      if (!connSnap.exists || connSnap.data()?.status !== "ACTIVE") {
+        res.status(403).json({ error: "Not connected to this project." }); return;
+      }
+      uploadCompanyId = fileGcCompanyId;
+    }
+
+    // ── Verify project exists and belongs to the resolved company ──────────
+    const projectRef = db.doc(`${COLLECTIONS.projects(uploadCompanyId)}/${resolvedProjectId}`);
     const projectSnap = await projectRef.get();
-    if (!projectSnap.exists || projectSnap.data()?.companyId !== companyId) {
+    if (!projectSnap.exists || projectSnap.data()?.companyId !== uploadCompanyId) {
       res.status(404).json({ error: "Project not found." }); return;
     }
 
@@ -664,25 +690,26 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
       replyBadRequest(res, "Unsupported file type. Use PDF, XLSX, CSV, or TXT."); return;
     }
 
-    logger.info("schedules/upload: file received", { companyId, projectId: resolvedProjectId, fileName, bytes: buffer.length });
+    logger.info("schedules/upload: file received", { uploadCompanyId, callerCompanyId: companyId, projectId: resolvedProjectId, fileName, bytes: buffer.length });
 
     // ── Determine upload version ───────────────────────────────────────────
     const uploadsSnap = await db
-      .collection(`companies/${companyId}/projects/${resolvedProjectId}/scheduleUploads`)
+      .collection(`companies/${uploadCompanyId}/projects/${resolvedProjectId}/scheduleUploads`)
       .orderBy("uploadedAt", "desc")
       .limit(1)
       .get();
     const version = uploadsSnap.empty ? 1 : (uploadsSnap.docs[0].data().version as number ?? 0) + 1;
 
     // ── Create upload record ───────────────────────────────────────────────
-    const uploadRef = db.collection(`companies/${companyId}/projects/${resolvedProjectId}/scheduleUploads`).doc();
+    const uploadRef = db.collection(`companies/${uploadCompanyId}/projects/${resolvedProjectId}/scheduleUploads`).doc();
     const now = FieldValue.serverTimestamp();
     const rawText = isPdf ? "[PDF — parsed via vision]" : buffer.toString("utf-8");
 
     await uploadRef.set({
       id: uploadRef.id,
       projectId: resolvedProjectId,
-      companyId,
+      companyId: uploadCompanyId,
+      uploadedByCompanyId: companyId,
       fileName,
       rawText,
       version,
@@ -698,30 +725,26 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
 
       // Single Claude call for the entire PDF — no page-count pre-flight needed.
       // Sonnet supports up to 100 pages per request within its 200k context window.
-      logger.info("schedules/upload: sending full PDF to Claude", { companyId });
-      tasks = await extractTasksFromPdf(base64, companyId);
+      logger.info("schedules/upload: sending full PDF to Claude", { uploadCompanyId });
+      tasks = await extractTasksFromPdf(base64, uploadCompanyId);
     } else {
-      tasks = await extractTasksFromText(rawText, companyId);
+      tasks = await extractTasksFromText(rawText, uploadCompanyId);
     }
 
     // ── Save to Firestore ──────────────────────────────────────────────────
-    const result = await saveParsedTasks(tasks, resolvedProjectId, companyId, uploadRef.id);
+    const result = await saveParsedTasks(tasks, resolvedProjectId, uploadCompanyId, uploadRef.id);
 
     // ── Send change notifications if this is a re-upload ──────────────────
     if (version > 1 && result.changesDetected > 0) {
       const resend = getResend();
       if (resend) {
         try {
-          const teamSnap = await db.collection(COLLECTIONS.teamMembers(companyId)).get();
-          const recipients = teamSnap.docs
-            .map((d) => d.data())
-            .filter((m) => m.notifyOnScheduleChange && m.email);
-
-          const projectSnap = await db.doc(`${COLLECTIONS.projects(companyId)}/${resolvedProjectId}`).get();
-          const projectName = projectSnap.data()?.name ?? "Project";
+          const projectSnap = await db.doc(`${COLLECTIONS.projects(uploadCompanyId)}/${resolvedProjectId}`).get();
+          const notifProjectName = projectSnap.data()?.name ?? "Project";
+          const subject = `Schedule updated: ${notifProjectName} — ${result.changesDetected} change${result.changesDetected !== 1 ? "s" : ""}`;
 
           const changesSnap = await db
-            .collection(`companies/${companyId}/projects/${resolvedProjectId}/scheduleChanges`)
+            .collection(`companies/${uploadCompanyId}/projects/${resolvedProjectId}/scheduleChanges`)
             .orderBy("detectedAt", "desc")
             .limit(50)
             .get();
@@ -736,23 +759,45 @@ export const schedulesUploadApi = functions.runWith({ timeoutSeconds: 300, memor
               shiftDays: c.shiftDays ?? 0,
             };
           });
+          const notifHtml = buildScheduleChangeEmailHtml(recentChanges, notifProjectName);
 
-          for (const member of recipients) {
-            await resend.emails.send({
-              from: FROM,
-              to: member.email,
-              subject: `Schedule updated: ${projectName} — ${result.changesDetected} change${result.changesDetected !== 1 ? "s" : ""}`,
-              html: buildScheduleChangeEmailHtml(recentChanges, projectName),
-            });
+          // GC team notifications
+          const gcTeamSnap = await db.collection(COLLECTIONS.teamMembers(uploadCompanyId)).get();
+          const gcRecipients = gcTeamSnap.docs
+            .map((d) => d.data())
+            .filter((m) => m.notifyOnScheduleChange && m.email);
+          for (const member of gcRecipients) {
+            await resend.emails.send({ from: FROM, to: member.email, subject, html: notifHtml });
           }
-          logger.info("schedules/upload: change notifications sent", { companyId, recipients: recipients.length });
+
+          // Connected sub notifications
+          const connectionsSnap = await db.collection(COLLECTIONS.projectConnections(uploadCompanyId)).get();
+          const activeConns = connectionsSnap.docs.filter(
+            (d) => d.id.startsWith(resolvedProjectId + "_") && d.data().status === "ACTIVE"
+          );
+          let subRecipientCount = 0;
+          for (const conn of activeConns) {
+            const subCompanyId = conn.data().subCompanyId as string;
+            const subTeamSnap = await db.collection(COLLECTIONS.teamMembers(subCompanyId)).get();
+            const subRecipients = subTeamSnap.docs
+              .map((d) => d.data())
+              .filter((m) => m.notifyOnScheduleChange && m.email);
+            for (const member of subRecipients) {
+              await resend.emails.send({ from: FROM, to: member.email, subject, html: notifHtml });
+              subRecipientCount++;
+            }
+          }
+
+          logger.info("schedules/upload: change notifications sent", {
+            uploadCompanyId, gcRecipients: gcRecipients.length, subRecipients: subRecipientCount,
+          });
         } catch (emailErr) {
           logger.warn("schedules/upload: failed to send change notifications", { error: String(emailErr) });
         }
       }
     }
 
-    logger.info("schedules/upload: complete", { companyId, projectId: resolvedProjectId, ...result, version });
+    logger.info("schedules/upload: complete", { uploadCompanyId, projectId: resolvedProjectId, ...result, version });
 
     res.json({ ...result, version });
   });

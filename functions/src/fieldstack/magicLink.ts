@@ -37,7 +37,7 @@ const TOKEN_EXPIRY_DAYS = 7;
 interface MagicLinkPayload {
   stepId: string;
   action: "complete" | "block" | "note";
-  companyId: string;
+  ownerCompanyId: string;
   exp: number; // unix timestamp
 }
 
@@ -95,7 +95,7 @@ export const magicLinkApi = functions.https.onRequest((req, res) => {
       const stepSnap = await db
         .collectionGroup("taskSteps")
         .where("id", "==", payload.stepId)
-        .where("companyId", "==", payload.companyId)
+        .where("companyId", "==", payload.ownerCompanyId)
         .limit(1)
         .get();
 
@@ -108,7 +108,7 @@ export const magicLinkApi = functions.https.onRequest((req, res) => {
 
       // Get project name
       const projectSnap = await db
-        .doc(`companies/${payload.companyId}/projects/${step.projectId}`)
+        .doc(`companies/${payload.ownerCompanyId}/projects/${step.projectId}`)
         .get();
       const projectName = projectSnap.data()?.name ?? "Unknown Project";
 
@@ -116,7 +116,7 @@ export const magicLinkApi = functions.https.onRequest((req, res) => {
       let assignedToName: string | null = null;
       if (step.assignedToId) {
         const memberSnap = await db
-          .doc(`companies/${payload.companyId}/teamMembers/${step.assignedToId}`)
+          .doc(`companies/${payload.ownerCompanyId}/teamMembers/${step.assignedToId}`)
           .get();
         assignedToName = memberSnap.data()?.name ?? null;
       }
@@ -145,7 +145,7 @@ export const magicLinkApi = functions.https.onRequest((req, res) => {
       const stepSnap = await db
         .collectionGroup("taskSteps")
         .where("id", "==", payload.stepId)
-        .where("companyId", "==", payload.companyId)
+        .where("companyId", "==", payload.ownerCompanyId)
         .limit(1)
         .get();
 

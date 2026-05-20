@@ -149,7 +149,7 @@ async function runEscalationForCompany(companyId: string): Promise<{
     const stepLabel = STEP_LABELS[step.stepType] ?? step.stepType;
     const location = [step.building, step.floor].filter(Boolean).join(" / ") || "General";
 
-    const magicToken = createMagicToken({ stepId: step.id, action: "complete", companyId });
+    const magicToken = createMagicToken({ stepId: step.id, action: "complete", ownerCompanyId: companyId });
     const magicUrl = buildMagicUrl(magicToken);
 
     const emailParams = {
@@ -305,7 +305,7 @@ async function runSubEscalationForSub(subCompanyId: string): Promise<{
     const location = [step.building, step.floor].filter(Boolean).join(" / ") || "General";
 
     // Magic link uses gcCompanyId — step.companyId is always the GC's companyId
-    const magicToken = createMagicToken({ stepId: step.id, action: "complete", companyId: step.companyId });
+    const magicToken = createMagicToken({ stepId: step.id, action: "complete", ownerCompanyId: step.companyId });
     const magicUrl = buildMagicUrl(magicToken);
 
     const primaryName = owner?.name ?? supervisors[0]?.name ?? "Team";
@@ -434,7 +434,7 @@ async function sendWeeklyDigestForCompany(companyId: string, companyName: string
   // Build magic links for overdue steps
   const overdueWithLinks = await Promise.all(
     overdueSteps.slice(0, 10).map(async (s) => {
-      const token = createMagicToken({ stepId: s.id, action: "complete", companyId });
+      const token = createMagicToken({ stepId: s.id, action: "complete", ownerCompanyId: companyId });
       const assignee = s.assignedToId ? teamById.get(s.assignedToId) : null;
       const dueDate = s.dueDate?.toDate ? s.dueDate.toDate() : null;
       return {
