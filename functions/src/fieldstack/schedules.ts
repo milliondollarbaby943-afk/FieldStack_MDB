@@ -136,7 +136,7 @@ async function extractTasksFromPdf(
     companyId,
     action: "parse_schedule_pdf",
     model: "claude-sonnet-4-6",
-    max_tokens: 32000,
+    max_tokens: 64000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -184,8 +184,8 @@ async function extractTasksFromPdfPage(
   const message = await createMessage({
     companyId,
     action: "parse_schedule_page",
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 8192,
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -233,7 +233,7 @@ async function extractTasksFromText(rawText: string, companyId: string): Promise
       companyId,
       action: "parse_schedule_text",
       model: "claude-sonnet-4-6",
-      max_tokens: 16000,
+      max_tokens: 32000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Parse this construction schedule and return the JSON array:\n\n${chunk}` }],
     });

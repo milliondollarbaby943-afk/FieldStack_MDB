@@ -117,7 +117,7 @@ async function extractSchedule(
     companyId,
     action: "extract_schedule",
     model: "claude-sonnet-4-6",
-    max_tokens: 32000,
+    max_tokens: 64000,
     system: COMBINED_SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent as object[] }],
   });
