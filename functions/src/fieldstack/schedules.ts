@@ -135,8 +135,8 @@ async function extractTasksFromPdf(
   const message = await createMessage({
     companyId,
     action: "parse_schedule_pdf",
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 8192,
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -219,23 +219,21 @@ async function extractTasksFromText(rawText: string, companyId: string): Promise
   const MAX_CHUNK = 12000;
   const allTasks: ParsedTask[] = [];
 
-  const chunks = rawText.length <= MAX_CHUNK
-    ? [rawText]
-    : rawText.split(/===\s*Page\s+\d+.*?===/).filter((p) => p.trim().length > 50);
-
-  const chunksToProcess = chunks.length > 1 ? chunks : [];
-  if (chunksToProcess.length === 0) {
-    for (let i = 0; i < rawText.length; i += MAX_CHUNK) {
-      chunksToProcess.push(rawText.slice(i, i + MAX_CHUNK));
-    }
-  }
+  const pageSplit = rawText.split(/===\s*Page\s+\d+.*?===/).filter((p) => p.trim().length > 50);
+  const chunksToProcess: string[] = pageSplit.length > 1
+    ? pageSplit
+    : (() => {
+        const result: string[] = [];
+        for (let i = 0; i < rawText.length; i += MAX_CHUNK) result.push(rawText.slice(i, i + MAX_CHUNK));
+        return result;
+      })();
 
   for (const chunk of chunksToProcess) {
     const message = await createMessage({
       companyId,
       action: "parse_schedule_text",
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 8192,
+      model: "claude-sonnet-4-6",
+      max_tokens: 16000,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: `Parse this construction schedule and return the JSON array:\n\n${chunk}` }],
     });
@@ -291,6 +289,13 @@ async function saveParsedTasks(
     seen.add(key);
     return true;
   });
+
+  const noDateCount = uniqueTasks.filter((t) => !t.startDate).length;
+  if (noDateCount > 0) {
+    logger.warn("saveParsedTasks: skipping tasks with no startDate", {
+      companyId, projectId, skipped: noDateCount, total: uniqueTasks.length,
+    });
+  }
 
   for (const t of uniqueTasks) {
     if (!t.startDate) continue;

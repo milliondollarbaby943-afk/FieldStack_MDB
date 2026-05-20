@@ -116,8 +116,8 @@ async function extractSchedule(
   const message = await createMessage({
     companyId,
     action: "extract_schedule",
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 8192,
+    model: "claude-sonnet-4-6",
+    max_tokens: 32000,
     system: COMBINED_SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent as object[] }],
   });

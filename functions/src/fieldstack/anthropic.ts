@@ -12,6 +12,8 @@ const db = admin.firestore();
 // Cost per million tokens (USD) — update as Anthropic pricing changes
 // Source: https://docs.anthropic.com/en/docs/about-claude/pricing
 const MODEL_PRICES: Record<string, { input: number; output: number }> = {
+  // Sonnet 4.6 — $3 / $15
+  "claude-sonnet-4-6": { input: 3, output: 15 },
   // Sonnet 4.5 — $3 / $15
   "claude-sonnet-4-5-20250929": { input: 3, output: 15 },
   "claude-sonnet-4-5": { input: 3, output: 15 },
@@ -139,6 +141,20 @@ export async function createMessage(params: CreateMessageParams): Promise<Anthro
   }
 
   const data = (await response.json()) as AnthropicResponse;
+
+  if (data.stop_reason === "max_tokens") {
+    logger.error("anthropic: response truncated — hit max_tokens", {
+      action,
+      companyId,
+      model: messageParams.model,
+      max_tokens: messageParams.max_tokens,
+      outputTokens: data.usage?.output_tokens,
+    });
+    throw new Error(
+      `Anthropic response was truncated (max_tokens reached for action="${action}"). ` +
+      `Increase max_tokens or reduce input. Output was ${data.usage?.output_tokens} tokens.`
+    );
+  }
 
   logger.info("anthropic: request complete", {
     action,
