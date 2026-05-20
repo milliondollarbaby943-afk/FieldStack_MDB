@@ -39,8 +39,9 @@ import { UploadTab } from "@/components/fieldstack/tabs/UploadTab";
 import { ChangesTab } from "@/components/fieldstack/tabs/ChangesTab";
 import { ProjectSettingsTab } from "@/components/fieldstack/tabs/ProjectSettingsTab";
 import { PendingChangesTab } from "@/components/fieldstack/tabs/PendingChangesTab";
+import { SubsTab } from "@/components/fieldstack/tabs/SubsTab";
 
-const TABS = ["Overview", "Feed", "Workflow", "Timeline", "Orders", "Upload", "Changes", "Pending", "Settings"] as const;
+const TABS = ["Overview", "Feed", "Workflow", "Timeline", "Orders", "Upload", "Changes", "Pending", "Subs", "Settings"] as const;
 type Tab = typeof TABS[number];
 
 function fmt(ts: Timestamp | undefined | null) {
@@ -334,6 +335,10 @@ export default function ProjectDetail() {
             changes={pendingChanges}
             onRefresh={loadPendingChanges}
           />
+        </TabsContent>
+
+        <TabsContent value="Subs">
+          <SubsTab projectId={id!} tasks={tasks} />
         </TabsContent>
 
         <TabsContent value="Settings">

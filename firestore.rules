@@ -132,11 +132,11 @@ service cloud.firestore {
       match /projects/{projectId} {
         // True when an authenticated Sub user has an active connection to this GC project.
         // Requires a projectConnection doc at companies/{companyId}/projectConnections/{projectId}_{subCompanyId}
-        // with status == 'active'. The doc ID convention is enforced by the server invite flow.
+        // with status == 'ACTIVE'. The doc ID convention is enforced by the server invite flow.
         function hasActiveSubConnection() {
           return isSubMember()
             && exists(/databases/$(database)/documents/companies/$(companyId)/projectConnections/$(projectId + "_" + userCompanyId()))
-            && get(/databases/$(database)/documents/companies/$(companyId)/projectConnections/$(projectId + "_" + userCompanyId())).data.status == 'active';
+            && get(/databases/$(database)/documents/companies/$(companyId)/projectConnections/$(projectId + "_" + userCompanyId())).data.status == 'ACTIVE';
         }
 
         // GC members: full read. Sub users: read projects they are connected to.
@@ -171,13 +171,13 @@ service cloud.firestore {
           // GC: server-side only
           allow write: if false;
 
-          // Sub users may update status and notes on steps where canEditBy permits.
+          // Sub users may update status, notes, and completedAt on steps where canEditBy permits.
           // They may never change dates, step type, or any other GC-owned fields.
           allow update: if isSubMember()
             && hasActiveSubConnection()
             && (resource.data.canEditBy == 'SUB' || resource.data.canEditBy == 'BOTH')
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['status', 'notes', 'updatedAt']);
+                 .hasOnly(['status', 'notes', 'completedAt', 'updatedAt']);
         }
 
         match /feedEntries/{entryId} {

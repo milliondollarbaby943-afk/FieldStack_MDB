@@ -1,5 +1,5 @@
 /**
- * useProjectConnections — loads active sub companies connected to a GC project.
+ * useProjectConnections — loads sub companies connected to a GC project (ACTIVE + PENDING).
  */
 
 import { useState, useEffect } from "react";
@@ -19,6 +19,8 @@ export interface ConnectedSub {
   id: string;
   name: string;
   connectionId: string;
+  status: string;
+  subEmail: string;
 }
 
 export function useProjectConnections(projectId: string | undefined) {
@@ -33,10 +35,10 @@ export function useProjectConnections(projectId: string | undefined) {
       return;
     }
 
+    // Watch all connections for this project (PENDING + ACTIVE)
     const q = query(
       collection(firestore, `companies/${company.id}/projectConnections`),
       where("gcProjectId", "==", projectId),
-      where("status", "==", "active")
     );
 
     const unsub = onSnapshot(q, async (snap) => {
@@ -47,13 +49,16 @@ export function useProjectConnections(projectId: string | undefined) {
 
       const subs = await Promise.all(
         connections.map(async (conn) => {
-          const companySnap = await getDoc(
-            doc(firestore, "companies", conn.subCompanyId)
-          );
-          const name = companySnap.exists()
-            ? (companySnap.data().name as string)
-            : conn.subCompanyId;
-          return { id: conn.subCompanyId, name, connectionId: conn.id };
+          if (conn.subCompanyId) {
+            const companySnap = await getDoc(
+              doc(firestore, "companies", conn.subCompanyId)
+            );
+            const name = companySnap.exists()
+              ? (companySnap.data().name as string)
+              : conn.subCompanyId;
+            return { id: conn.subCompanyId, name, connectionId: conn.id, status: conn.status, subEmail: conn.subEmail };
+          }
+          return { id: conn.id, name: conn.subEmail, connectionId: conn.id, status: conn.status, subEmail: conn.subEmail };
         })
       );
 

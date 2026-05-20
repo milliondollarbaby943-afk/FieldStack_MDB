@@ -1,6 +1,7 @@
 /**
  * WorkflowTab — 6-step task chain per building/floor.
  * Shop Drawings → Submissions → Order Materials → Confirm Delivery → Install → Punch List
+ * GC can click any step to cycle its status (PENDING → IN_PROGRESS → COMPLETE → PENDING).
  */
 
 import { useState } from "react";
@@ -13,6 +14,7 @@ import { Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import type { TaskStep, TeamMember } from "@/types/fieldstack";
 import { STEP_TYPE_LABELS } from "@/types/fieldstack";
+import { apiUpdateStep } from "@/lib/fieldstackApi";
 
 const STEP_ORDER = ["SHOP_DRAWINGS", "SUBMISSIONS", "ORDER_MATERIALS", "CONFIRM_DELIVERY", "INSTALL", "PUNCH_LIST"] as const;
 
@@ -30,6 +32,69 @@ function statusBadge(status: string) {
   return <Badge variant="outline" className="text-muted-foreground text-[10px]">Pending</Badge>;
 }
 
+function nextStatus(current: string): string {
+  if (current === "PENDING") return "IN_PROGRESS";
+  if (current === "IN_PROGRESS") return "COMPLETE";
+  return "PENDING";
+}
+
+function nextStatusLabel(current: string): string {
+  if (current === "PENDING") return "Start";
+  if (current === "IN_PROGRESS") return "Mark Complete";
+  return "Reset";
+}
+
+interface StepRowProps {
+  step: TaskStep;
+  assigneeName?: string;
+}
+
+function StepRow({ step, assigneeName }: StepRowProps) {
+  const [updating, setUpdating] = useState(false);
+  const dueDate = step.dueDate instanceof Timestamp ? format(step.dueDate.toDate(), "MMM d") : null;
+
+  async function handleStatusToggle() {
+    setUpdating(true);
+    try {
+      await apiUpdateStep(step.id, { status: nextStatus(step.status) });
+    } catch {
+      toast.error("Failed to update step.");
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      {statusIcon(step.status)}
+      <div className="flex-1 min-w-0">
+        <span className="text-sm">{STEP_TYPE_LABELS[step.stepType] ?? step.stepType}</span>
+        {step.notes && (
+          <span className="text-xs text-muted-foreground ml-2 truncate">{step.notes}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {assigneeName && (
+          <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{assigneeName}</span>
+        )}
+        {dueDate && (
+          <span className="text-xs text-muted-foreground font-mono">{dueDate}</span>
+        )}
+        {statusBadge(step.status)}
+        <Button
+          size="sm"
+          variant={step.status === "COMPLETE" ? "ghost" : "outline"}
+          className="h-6 text-[11px] px-2 shrink-0"
+          onClick={handleStatusToggle}
+          disabled={updating}
+        >
+          {updating ? <Loader2 className="h-3 w-3 animate-spin" /> : nextStatusLabel(step.status)}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   projectId: string;
   steps: TaskStep[];
@@ -37,6 +102,8 @@ interface Props {
 }
 
 export function WorkflowTab({ projectId, steps, team }: Props) {
+  void projectId;
+
   // Group steps by building/floor
   const groups: Record<string, TaskStep[]> = {};
   for (const s of steps) {
@@ -72,35 +139,17 @@ export function WorkflowTab({ projectId, steps, team }: Props) {
             <CardTitle className="text-sm font-mono">{groupKey}</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="space-y-2">
-              {STEP_ORDER.map((stepType, idx) => {
+            <div className="divide-y">
+              {STEP_ORDER.map((stepType) => {
                 const step = groupSteps.find((s) => s.stepType === stepType);
                 if (!step) return null;
-                const dueDate = step.dueDate instanceof Timestamp ? format(step.dueDate.toDate(), "MMM d") : null;
                 const assignee = team.find((m) => m.id === step.assignedToId);
-
                 return (
-                  <div key={stepType} className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-mono w-4 shrink-0">
-                      {idx + 1}
-                    </div>
-                    {statusIcon(step.status)}
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm">{STEP_TYPE_LABELS[stepType]}</span>
-                      {step.notes && (
-                        <span className="text-xs text-muted-foreground ml-2 truncate">{step.notes}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {assignee && (
-                        <span className="text-xs text-muted-foreground font-mono">{assignee.name}</span>
-                      )}
-                      {dueDate && (
-                        <span className="text-xs text-muted-foreground font-mono">{dueDate}</span>
-                      )}
-                      {statusBadge(step.status)}
-                    </div>
-                  </div>
+                  <StepRow
+                    key={stepType}
+                    step={step}
+                    assigneeName={assignee?.name}
+                  />
                 );
               })}
             </div>

@@ -466,6 +466,16 @@ const STEP_ROLE_MAP: Record<string, string> = {
   PUNCH_LIST: "SUPERVISOR",
 };
 
+// GC = only GC team members can update, SUB = only sub can update, BOTH = either can update
+const STEP_CAN_EDIT_BY: Record<string, string> = {
+  SHOP_DRAWINGS: "GC",
+  SUBMISSIONS: "GC",
+  ORDER_MATERIALS: "BOTH",
+  CONFIRM_DELIVERY: "SUB",
+  INSTALL: "SUB",
+  PUNCH_LIST: "SUB",
+};
+
 async function generateTaskChain(input: {
   projectId: string;
   companyId: string;
@@ -514,6 +524,7 @@ async function generateTaskChain(input: {
       building,
       floor,
       stepType: s.stepType,
+      canEditBy: STEP_CAN_EDIT_BY[s.stepType] ?? "GC",
       assignedToId: roleMap.get(STEP_ROLE_MAP[s.stepType]) ?? null,
       dueDate: s.dueDate ? Timestamp.fromDate(s.dueDate) : null,
       completedAt: null,

@@ -267,15 +267,39 @@ export const inviteAcceptApi = functions.https.onRequest((req, res) => {
       }
 
       const now = FieldValue.serverTimestamp();
-      await Promise.all([
-        connRef.update({ subCompanyId: companyId, status: "ACTIVE", acceptedAt: now }),
-        db.doc(`${COLLECTIONS.companies}/${companyId}`).update({ companyType: "SUB", updatedAt: now }),
-      ]);
+
+      // Write canonical connection doc that Firestore rules can look up by ID.
+      // Rules check for companies/{gcCompanyId}/projectConnections/{projectId}_{subCompanyId}.
+      const canonicalId = `${payload.gcProjectId}_${companyId}`;
+      const canonicalRef = db.doc(`${COLLECTIONS.projectConnections(payload.gcCompanyId)}/${canonicalId}`);
+
+      // Batch-assign all isOurTask=true tasks in this project to the sub company.
+      const tasksSnap = await db
+        .collection(`${COLLECTIONS.projects(payload.gcCompanyId)}/${payload.gcProjectId}/tasks`)
+        .where("isOurTask", "==", true)
+        .get();
+
+      const batch = db.batch();
+      batch.update(connRef, { subCompanyId: companyId, status: "ACTIVE", acceptedAt: now });
+      batch.update(db.doc(`${COLLECTIONS.companies}/${companyId}`), { companyType: "SUB", updatedAt: now });
+      batch.set(canonicalRef, {
+        id: canonicalId,
+        gcCompanyId: payload.gcCompanyId,
+        gcProjectId: payload.gcProjectId,
+        subCompanyId: companyId,
+        status: "ACTIVE",
+        acceptedAt: now,
+      });
+      for (const taskDoc of tasksSnap.docs) {
+        batch.update(taskDoc.ref, { assignedSubCompanyId: companyId, updatedAt: now });
+      }
+      await batch.commit();
 
       logger.info("inviteAcceptApi: connection activated", {
         connectionId: payload.connectionId,
         gcCompanyId: payload.gcCompanyId,
         subCompanyId: companyId,
+        tasksAssigned: tasksSnap.size,
       });
 
       res.json({ gcProjectId: payload.gcProjectId, gcCompanyId: payload.gcCompanyId });

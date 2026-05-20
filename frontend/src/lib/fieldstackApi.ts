@@ -365,6 +365,15 @@ export async function apiRejectPendingChange(changeId: string, reason?: string):
   });
 }
 
+// ─── Steps ───────────────────────────────────────────────────────────────────
+
+export async function apiUpdateStep(
+  stepId: string,
+  data: { status?: string; notes?: string; assignedToId?: string; dueDate?: string | null }
+): Promise<void> {
+  return callFunction("stepsApi", `/${stepId}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
 // ─── Sub invite ───────────────────────────────────────────────────────────────
 
 export async function apiInviteSub(projectId: string, subEmail: string): Promise<{ connectionId: string }> {
